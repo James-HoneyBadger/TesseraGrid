@@ -26,14 +26,11 @@ impl Automaton for BriansBrain {
 
     fn step(&mut self) {
         let firing_neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let old = self.grid.cells.clone();
-        for i in 0..old.len() {
-            self.grid.cells[i] = match old[i] {
-                0 => u8::from(firing_neighbors[i] == 2), // Off → Firing if exactly 2 firing nbrs
-                1 => 2,                                  // Firing → Refractory
-                _ => 0,                                  // Refractory → Off
-            };
-        }
+        self.grid.update_cells(|i, state| match state {
+            0 => u8::from(firing_neighbors[i] == 2), // Off → Firing if exactly 2 firing nbrs
+            1 => 2,                                  // Firing → Refractory
+            _ => 0,                                  // Refractory → Off
+        });
     }
 
     fn reset(&mut self) {

@@ -2,6 +2,9 @@
 
 use super::BoundaryMode;
 
+/// Cell count above which per-cell work is spread across threads.
+pub const PARALLEL_CELL_THRESHOLD: usize = 50_000;
+
 /// A flat, heap-allocated 2-D grid of `u8` cells.
 ///
 /// Indices are row-major: `cells[y * width + x]`.
@@ -44,18 +47,47 @@ impl Grid {
     // Neighbour helpers
     // -----------------------------------------------------------------------
 
+    /// Map every cell index to a value, in parallel for large grids.
+    ///
+    /// `f` must only read the grid, so the results can be computed before the
+    /// grid is mutated.
+    pub fn map_cells<R: Send>(&self, f: impl Fn(usize) -> R + Sync + Send) -> Vec<R> {
+        let n = self.cells.len();
+        if n >= PARALLEL_CELL_THRESHOLD {
+            use rayon::prelude::*;
+            (0..n).into_par_iter().map(f).collect()
+        } else {
+            (0..n).map(f).collect()
+        }
+    }
+
+    /// Recompute every cell in place from its own current value.
+    ///
+    /// `update` receives the cell index and its state; automata must precompute
+    /// neighbour data with [`Grid::map_cells`] (or a neighbour helper) first,
+    /// because cells are rewritten one index at a time. Large grids are updated
+    /// in parallel.
+    pub fn update_cells(&mut self, update: impl Fn(usize, u8) -> u8 + Sync + Send) {
+        if self.cells.len() >= PARALLEL_CELL_THRESHOLD {
+            use rayon::prelude::*;
+            self.cells
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, cell)| *cell = update(i, *cell));
+        } else {
+            for (i, cell) in self.cells.iter_mut().enumerate() {
+                *cell = update(i, *cell);
+            }
+        }
+    }
+
     /// Compute the count of 8-neighbours whose value equals `check_val` for
     /// every cell, returning a flat `Vec<u8>` with the same layout.
-    ///
-    /// Uses rayon parallel iteration for grids larger than 50 000 cells.
     pub fn neighbor_counts(&self, boundary: BoundaryMode, check_val: u8) -> Vec<u8> {
-        let h = self.height;
-        let w = self.width;
-        let n = h * w;
+        let (w, h) = (self.width, self.height);
         let cells = &self.cells;
-        let compute = |i: usize| {
-            let y = i / w;
-            let x = i % w;
+        self.map_cells(|i| {
+            let (x, y) = (i % w, i / w);
             let mut c = 0u8;
             for dy in -1i32..=1 {
                 for dx in -1i32..=1 {
@@ -70,27 +102,16 @@ impl Grid {
                 }
             }
             c
-        };
-        if n >= 50_000 {
-            use rayon::prelude::*;
-            (0..n).into_par_iter().map(compute).collect()
-        } else {
-            (0..n).map(compute).collect()
-        }
+        })
     }
 
     /// Returns `(alive_count, color_sum)` neighbour arrays, used by
     /// multi-state automata like Immigration and Rainbow.
-    ///
-    /// Uses rayon parallel iteration for grids larger than 50 000 cells.
     pub fn neighbor_stats_alive(&self, boundary: BoundaryMode) -> (Vec<u8>, Vec<u32>) {
-        let h = self.height;
-        let w = self.width;
-        let n = h * w;
+        let (w, h) = (self.width, self.height);
         let cells = &self.cells;
-        let compute = |i: usize| -> (u8, u32) {
-            let y = i / w;
-            let x = i % w;
+        let stats: Vec<(u8, u32)> = self.map_cells(|i| {
+            let (x, y) = (i % w, i / w);
             let mut c = 0u8;
             let mut s = 0u32;
             for dy in -1i32..=1 {
@@ -108,12 +129,7 @@ impl Grid {
                 }
             }
             (c, s)
-        };
-        if n >= 50_000 {
-            use rayon::prelude::*;
-            (0..n).into_par_iter().map(compute).unzip()
-        } else {
-            (0..n).map(compute).unzip()
-        }
+        });
+        stats.into_iter().unzip()
     }
 }

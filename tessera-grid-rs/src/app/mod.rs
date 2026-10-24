@@ -15,6 +15,7 @@ mod shell;
 mod sidebar;
 mod statusbar;
 mod theme;
+mod timeline;
 mod toolbar;
 
 use std::time::{Duration, Instant};
@@ -120,6 +121,10 @@ pub struct TesseraGridApp {
     // ── Canvas rect (updated every frame, used for zoom-to-fit) ──────────────
     canvas_rect: egui::Rect,
     hover_cell: Option<(i64, i64, u8)>,
+
+    // ── Pattern editor ───────────────────────────────────────────────────────
+    show_editor: bool,
+    editor: patterns::PatternDraft,
 
     // ── Help & gallery modals ────────────────────────────────────────────────
     show_help: bool,
@@ -232,6 +237,8 @@ impl TesseraGridApp {
 
             canvas_rect: egui::Rect::ZERO,
             hover_cell: None,
+            show_editor: false,
+            editor: patterns::PatternDraft::new(24),
             show_help: false,
             show_gallery: false,
             show_about: false,

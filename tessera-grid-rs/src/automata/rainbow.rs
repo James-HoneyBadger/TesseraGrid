@@ -26,13 +26,11 @@ impl Automaton for RainbowGame {
 
     fn step(&mut self) {
         let (counts, sums) = self.grid.neighbor_stats_alive(self.boundary);
-        let old = self.grid.cells.clone();
-        for i in 0..old.len() {
-            let alive = old[i] > 0;
+        self.grid.update_cells(|i, state| {
             let nc = counts[i];
-            self.grid.cells[i] = if alive {
+            if state > 0 {
                 if nc == 2 || nc == 3 {
-                    old[i]
+                    state
                 } else {
                     0
                 }
@@ -40,8 +38,8 @@ impl Automaton for RainbowGame {
                 (sums[i] / 3).clamp(1, 6) as u8
             } else {
                 0
-            };
-        }
+            }
+        });
     }
 
     fn reset(&mut self) {

@@ -26,16 +26,14 @@ impl Automaton for ConwayLife {
 
     fn step(&mut self) {
         let neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let old = self.grid.cells.clone();
-        for i in 0..old.len() {
-            let alive = old[i] == 1;
+        self.grid.update_cells(|i, state| {
             let n = neighbors[i];
-            self.grid.cells[i] = if alive {
+            if state == 1 {
                 u8::from(n == 2 || n == 3)
             } else {
                 u8::from(n == 3)
-            };
-        }
+            }
+        });
     }
 
     fn reset(&mut self) {

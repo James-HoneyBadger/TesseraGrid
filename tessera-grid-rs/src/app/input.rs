@@ -2,13 +2,14 @@ use super::*;
 
 impl TesseraGridApp {
     pub(super) fn handle_keyboard(&mut self, ctx: &egui::Context) {
-        // Skip shortcuts when a text field is focused (e.g., custom rule input).
-        // Never steal keys from a focused widget (text edit or focused button).
-        if ctx.memory(|memory| memory.focused().is_some()) {
+        // Text fields own the keyboard while focused (e.g. the custom rule input).
+        if ctx.egui_wants_keyboard_input() {
             return;
         }
+        // Space would also activate a focused button, so let the widget win.
+        let widget_focused = ctx.memory(|memory| memory.focused().is_some());
         ctx.input(|i| {
-            if i.key_pressed(egui::Key::Space) {
+            if i.key_pressed(egui::Key::Space) && !widget_focused {
                 self.running = !self.running;
                 if self.running {
                     self.last_step = Instant::now();
@@ -50,6 +51,9 @@ impl TesseraGridApp {
             }
             if i.modifiers.ctrl && i.key_pressed(egui::Key::E) {
                 self.export_png_dialog();
+            }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::P) {
+                self.show_editor = !self.show_editor;
             }
             // Zoom
             let plus = i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals);

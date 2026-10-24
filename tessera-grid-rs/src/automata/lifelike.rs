@@ -62,16 +62,15 @@ impl Automaton for LifeLike {
 
     fn step(&mut self) {
         let neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let old = self.grid.cells.clone();
-        for i in 0..old.len() {
-            let alive = old[i] == 1;
+        let (birth, survival) = (&self.birth, &self.survival);
+        self.grid.update_cells(|i, state| {
             let n = neighbors[i];
-            self.grid.cells[i] = if alive {
-                u8::from(self.survival.contains(&n))
+            if state == 1 {
+                u8::from(survival.contains(&n))
             } else {
-                u8::from(self.birth.contains(&n))
-            };
-        }
+                u8::from(birth.contains(&n))
+            }
+        });
     }
 
     fn reset(&mut self) {

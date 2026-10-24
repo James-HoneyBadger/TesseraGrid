@@ -67,6 +67,7 @@ impl eframe::App for TesseraGridApp {
         self.ui_resize_dialog(&ctx);
         self.ui_help_modal(&ctx);
         self.ui_gallery(&ctx);
+        self.ui_editor(&ctx);
         self.ui_about(&ctx);
 
         let colors = self.theme.colors();
@@ -98,6 +99,13 @@ impl eframe::App for TesseraGridApp {
             .frame(bar_frame)
             .show(ui, |ui| {
                 self.ui_statusbar(ui);
+            });
+
+        // Timeline scrubber (sits directly above the status bar)
+        egui::Panel::bottom("timeline")
+            .frame(bar_frame)
+            .show(ui, |ui| {
+                self.ui_timeline(ui);
             });
 
         // Controls side panel

@@ -35,15 +35,13 @@ impl Automaton for Generations {
     fn step(&mut self) {
         // Count only fully-alive (state == 1) neighbours
         let neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let old = self.grid.cells.clone();
-        let n_states = self.n_states;
-        for i in 0..old.len() {
-            let s = old[i];
+        let (birth, survival, n_states) = (&self.birth, &self.survival, self.n_states);
+        self.grid.update_cells(|i, state| {
             let nc = neighbors[i];
-            self.grid.cells[i] = match s {
-                0 => u8::from(self.birth.contains(&nc)),
+            match state {
+                0 => u8::from(birth.contains(&nc)),
                 1 => {
-                    if self.survival.contains(&nc) {
+                    if survival.contains(&nc) {
                         1
                     } else {
                         2 // begin decay
@@ -51,8 +49,8 @@ impl Automaton for Generations {
                 }
                 v if v < n_states - 1 => v + 1,
                 _ => 0,
-            };
-        }
+            }
+        });
     }
 
     fn reset(&mut self) {

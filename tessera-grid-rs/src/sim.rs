@@ -13,6 +13,10 @@ use crate::core::{BoundaryMode, Grid, Snapshot, UndoManager};
 pub const POP_HISTORY: usize = 500;
 /// Default upper bound for buffered GIF frames.
 pub const DEFAULT_MAX_FRAME_BYTES: usize = 256 * 1024 * 1024;
+/// Maximum number of generations kept for the timeline scrubber.
+pub const TIMELINE_MAX_ENTRIES: usize = 512;
+/// Default byte budget for timeline snapshots.
+pub const DEFAULT_MAX_TIMELINE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Build an automaton for `mode`, falling back to Conway for unknown names.
 pub fn make_automaton(
@@ -67,6 +71,13 @@ pub struct Simulation {
     frame_buffer: Vec<Vec<u8>>,
     frame_bytes: usize,
     pub max_frame_bytes: usize,
+    /// Recent generations for the timeline scrubber, oldest first.
+    timeline: VecDeque<Snapshot>,
+    timeline_bytes: usize,
+    /// `Some(index)` while the view shows an older generation instead of the
+    /// newest one; `None` means "live".
+    timeline_pos: Option<usize>,
+    pub max_timeline_bytes: usize,
 }
 
 impl Simulation {
@@ -98,6 +109,10 @@ impl Simulation {
             frame_buffer: Vec::new(),
             frame_bytes: 0,
             max_frame_bytes: DEFAULT_MAX_FRAME_BYTES,
+            timeline: VecDeque::new(),
+            timeline_bytes: 0,
+            timeline_pos: None,
+            max_timeline_bytes: DEFAULT_MAX_TIMELINE_BYTES,
         }
     }
 
@@ -193,6 +208,11 @@ impl Simulation {
     // ── Stepping ─────────────────────────────────────────────────────────────
 
     pub fn step(&mut self) {
+        self.rewind_to_live();
+        if self.timeline.is_empty() {
+            // Seed with the pre-step state so the scrubber can reach generation 0.
+            self.record_timeline();
+        }
         self.automaton.step();
         self.generation += 1;
 
@@ -230,6 +250,7 @@ impl Simulation {
             }
         }
         let _ = cell_count;
+        self.record_timeline();
     }
 
     /// Run up to `steps` generations, stopping early when `cancelled` is true.
@@ -272,11 +293,13 @@ impl Simulation {
         self.pop_history.clear();
         self.frame_buffer.clear();
         self.frame_bytes = 0;
+        self.clear_timeline();
     }
 
     pub fn load_pattern(&mut self, pattern: &str) {
         self.automaton.load_pattern(pattern);
         self.age_grid = vec![0; self.grid().cells.len()];
+        self.clear_timeline();
     }
 
     pub fn set_boundary(&mut self, boundary: BoundaryMode) {
@@ -291,6 +314,7 @@ impl Simulation {
         self.pop_history.clear();
         self.frame_buffer.clear();
         self.frame_bytes = 0;
+        self.clear_timeline();
     }
 
     /// Rebuild the automaton for a new mode/pattern, resetting all derived state.
@@ -318,6 +342,7 @@ impl Simulation {
         self.undo.clear();
         self.frame_buffer.clear();
         self.frame_bytes = 0;
+        self.clear_timeline();
     }
 
     /// Resize the grid, optionally preserving the overlapping region.
@@ -354,6 +379,7 @@ impl Simulation {
         self.undo.clear();
         self.frame_buffer.clear();
         self.frame_bytes = 0;
+        self.clear_timeline();
     }
 
     // ── Undo / redo ──────────────────────────────────────────────────────────
@@ -398,6 +424,83 @@ impl Simulation {
         self.generation = snapshot.generation;
         self.age_grid = vec![0; self.grid().cells.len()];
         self.pop_history.clear();
+        self.clear_timeline();
+    }
+
+    // ── Timeline ─────────────────────────────────────────────────────────────
+
+    /// Number of generations currently held by the timeline (including the
+    /// newest state), or zero when nothing has been recorded yet.
+    pub fn timeline_len(&self) -> usize {
+        self.timeline.len()
+    }
+
+    /// Index of the generation being displayed, or `None` while live.
+    pub fn timeline_pos(&self) -> Option<usize> {
+        self.timeline_pos
+    }
+
+    /// Generation number stored at `index`, if it exists.
+    pub fn timeline_generation(&self, index: usize) -> Option<u64> {
+        self.timeline.get(index).map(|entry| entry.generation)
+    }
+
+    /// Show an older generation without advancing the simulation.
+    pub fn scrub(&mut self, index: usize) -> bool {
+        let Some(snapshot) = self.timeline.get(index).cloned() else {
+            return false;
+        };
+        self.automaton.set_cells(&snapshot.cells);
+        self.generation = snapshot.generation;
+        self.age_grid = vec![0; self.grid().cells.len()];
+        self.pop_history.clear();
+        // The newest entry *is* the live state, so scrubbing to it leaves the
+        // timeline live rather than pinned.
+        self.timeline_pos = (index + 1 < self.timeline.len()).then_some(index);
+        true
+    }
+
+    /// Jump back to the newest generation.
+    pub fn resume_live(&mut self) -> bool {
+        match self.timeline.len() {
+            0 => false,
+            len => self.scrub(len - 1),
+        }
+    }
+
+    /// Drop generations after the scrub position and continue live from there.
+    ///
+    /// Called before every step so playing from a scrubbed position forks the
+    /// history instead of appending to a future that is no longer reachable.
+    fn rewind_to_live(&mut self) {
+        if let Some(position) = self.timeline_pos.take() {
+            while self.timeline.len() > position + 1 {
+                if let Some(entry) = self.timeline.pop_back() {
+                    self.timeline_bytes -= entry.cells.len();
+                }
+            }
+        }
+    }
+
+    fn record_timeline(&mut self) {
+        let snapshot = self.snapshot();
+        self.timeline_bytes += snapshot.cells.len();
+        self.timeline.push_back(snapshot);
+        while self.timeline.len() > TIMELINE_MAX_ENTRIES
+            || (self.timeline_bytes > self.max_timeline_bytes && self.timeline.len() > 1)
+        {
+            let Some(entry) = self.timeline.pop_front() else {
+                break;
+            };
+            self.timeline_bytes -= entry.cells.len();
+        }
+        self.timeline_pos = None;
+    }
+
+    fn clear_timeline(&mut self) {
+        self.timeline.clear();
+        self.timeline_bytes = 0;
+        self.timeline_pos = None;
     }
 
     // ── Frame recording ──────────────────────────────────────────────────────
@@ -475,6 +578,65 @@ mod tests {
         assert_eq!(s.generation, 0);
         assert_eq!(s.run_steps(5, || false), 5);
         assert_eq!(s.generation, 5);
+    }
+
+    #[test]
+    fn timeline_records_generations_and_scrubs_back() {
+        let mut s = sim("Conway's Game of Life");
+        s.randomize(3);
+        let start = s.grid().cells.clone();
+        for _ in 0..5 {
+            s.step();
+        }
+        assert_eq!(s.generation, 5);
+        assert_eq!(s.timeline_len(), 6, "generations 0-5 are kept");
+        assert!(s.timeline_pos().is_none(), "live until scrubbed");
+
+        assert!(s.scrub(0));
+        assert_eq!(s.generation, 0);
+        assert_eq!(s.grid().cells, start);
+        assert_eq!(s.timeline_pos(), Some(0));
+        assert_eq!(s.timeline_generation(5), Some(5));
+
+        assert!(s.resume_live());
+        assert_eq!(s.generation, 5);
+        assert!(s.timeline_pos().is_none());
+    }
+
+    #[test]
+    fn stepping_after_a_scrub_forks_the_timeline() {
+        let mut s = sim("Conway's Game of Life");
+        s.randomize(5);
+        for _ in 0..8 {
+            s.step();
+        }
+        assert!(s.scrub(2));
+        s.step();
+        assert_eq!(s.generation, 3);
+        assert_eq!(s.timeline_len(), 4, "future generations are dropped");
+        assert!(s.timeline_pos().is_none());
+    }
+
+    #[test]
+    fn timeline_is_byte_capped() {
+        let mut s = sim("Conway's Game of Life");
+        s.max_timeline_bytes = 20 * 20 * 2 * std::mem::size_of::<u8>();
+        s.randomize(1);
+        for _ in 0..10 {
+            s.step();
+        }
+        assert!(s.timeline_len() <= 2, "old snapshots are evicted");
+    }
+
+    #[test]
+    fn mutating_the_grid_clears_the_timeline() {
+        let mut s = sim("Conway's Game of Life");
+        s.randomize(2);
+        s.step();
+        assert!(s.timeline_len() > 0);
+        s.reset();
+        assert_eq!(s.timeline_len(), 0);
+        assert!(s.timeline_pos().is_none());
     }
 
     #[test]

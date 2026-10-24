@@ -126,6 +126,10 @@ impl TesseraGridApp {
                     self.show_gallery = true;
                     ui.close();
                 }
+                if ui.button("Pattern editor").clicked() {
+                    self.show_editor = true;
+                    ui.close();
+                }
                 if ui.button("About Tessera Grid").clicked() {
                     self.show_about = true;
                     ui.close();

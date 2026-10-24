@@ -26,23 +26,20 @@ impl Automaton for Wireworld {
 
     fn step(&mut self) {
         let head_neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let old = self.grid.cells.clone();
-        for i in 0..old.len() {
-            self.grid.cells[i] = match old[i] {
-                0 => 0,
-                1 => 2,
-                2 => 3,
-                3 => {
-                    let hn = head_neighbors[i];
-                    if hn == 1 || hn == 2 {
-                        1
-                    } else {
-                        3
-                    }
+        self.grid.update_cells(|i, state| match state {
+            0 => 0,
+            1 => 2,
+            2 => 3,
+            3 => {
+                let hn = head_neighbors[i];
+                if hn == 1 || hn == 2 {
+                    1
+                } else {
+                    3
                 }
-                _ => 0,
-            };
-        }
+            }
+            _ => 0,
+        });
     }
 
     fn reset(&mut self) {

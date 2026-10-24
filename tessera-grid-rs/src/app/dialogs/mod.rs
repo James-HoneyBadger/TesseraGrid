@@ -1,6 +1,8 @@
-//! Floating dialogs: shortcuts, pattern gallery, run-N, resize and about.
+//! Floating dialogs: shortcuts, pattern gallery, pattern editor, run-N, resize
+//! and about.
 
 mod about;
+mod editor;
 mod gallery;
 mod help;
 mod resize;

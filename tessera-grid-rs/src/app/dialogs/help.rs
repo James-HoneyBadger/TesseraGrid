@@ -25,6 +25,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Escape", "Deselect"),
     ("Ctrl+S  /  Ctrl+O", "Save / open state"),
     ("Ctrl+E", "Export PNG"),
+    ("Ctrl+P", "Pattern editor"),
     ("H  /  F1", "This help dialog"),
 ];
 
