@@ -9,9 +9,10 @@ mod config;
 mod dialogs;
 mod input;
 mod io;
-mod panels;
+mod menu_bar;
 mod selection;
 mod shell;
+mod sidebar;
 mod statusbar;
 mod theme;
 mod toolbar;
@@ -34,32 +35,6 @@ use crate::sim::{RuleSpec, Simulation};
 /// not starve the UI thread.
 const MAX_STEPS_PER_FRAME: u32 = 8;
 
-/// Every keyboard shortcut, kept in one place for the help dialog.
-const SHORTCUTS: &[(&str, &str)] = &[
-    ("Space", "Play / pause"),
-    ("S", "Step one generation"),
-    ("R", "Reset to the selected pattern"),
-    ("N", "Randomize with the current seed"),
-    ("G", "Toggle grid lines"),
-    ("T", "Cycle color theme"),
-    ("F  /  Ctrl+0", "Zoom to fit"),
-    ("V", "Toggle isometric 3-D view"),
-    ("+  /  −", "Zoom in / out"),
-    ("Mouse wheel", "Zoom at the cursor"),
-    ("Middle-drag  /  arrows", "Pan the view"),
-    ("Ctrl+Z", "Undo"),
-    ("Ctrl+Y  /  Ctrl+Shift+Z", "Redo"),
-    (
-        "Ctrl+C  /  Ctrl+X  /  Ctrl+V",
-        "Copy / cut / paste selection",
-    ),
-    ("Delete", "Clear selected cells"),
-    ("Escape", "Deselect"),
-    ("Ctrl+S  /  Ctrl+O", "Save / open state"),
-    ("Ctrl+E", "Export PNG"),
-    ("H  /  F1", "This help dialog"),
-];
-
 // ---------------------------------------------------------------------------
 // View mode (2-D flat vs isometric 3-D)
 // ---------------------------------------------------------------------------
@@ -80,19 +55,6 @@ enum ToolMode {
     #[default]
     Paint,
     Select,
-}
-
-// ---------------------------------------------------------------------------
-// Saved state (serialised to .tessera JSON)
-// ---------------------------------------------------------------------------
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct SavedState {
-    automaton: String,
-    generation: u64,
-    width: usize,
-    height: usize,
-    cells: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------
@@ -291,66 +253,9 @@ impl TesseraGridApp {
         }
     }
 
-    // ── Simulation helpers ───────────────────────────────────────────────────
-
     fn set_status(&mut self, msg: impl Into<String>) {
         self.status_msg = Some((msg.into(), Instant::now()));
     }
-
-    // ── Zoom to fit ──────────────────────────────────────────────────────────
-
-    fn zoom_to_fit(&mut self) {
-        let cw = self.canvas_rect.width();
-        let ch = self.canvas_rect.height();
-        if cw <= 0.0 || ch <= 0.0 {
-            return;
-        }
-        let (gw, gh) = {
-            let g = self.sim.grid();
-            (g.width as f32, g.height as f32)
-        };
-        self.cell_size = (cw / gw).min(ch / gh).clamp(1.0, 64.0);
-        let total_w = gw * self.cell_size;
-        let total_h = gh * self.cell_size;
-        self.viewport_offset = Vec2::new(
-            ((total_w - cw) / 2.0).max(0.0),
-            ((total_h - ch) / 2.0).max(0.0),
-        );
-    }
-
-    fn iso_fit(&mut self) {
-        let cw = self.canvas_rect.width();
-        let ch = self.canvas_rect.height();
-        if cw <= 0.0 || ch <= 0.0 {
-            return;
-        }
-        let (gw, gh) = {
-            let g = self.sim.grid();
-            (g.width as f32, g.height as f32)
-        };
-        // Isometric screen extent: width ≈ (gw+gh)*cs/2, height ≈ (gw+gh)*cs/4 + height_margin
-        let h_margin = 4.0 * self.iso_height; // state-units × cs/2 × iso_h, simplified
-        let cs_w = cw * 2.0 / (gw + gh).max(1.0);
-        let cs_h = ch / ((gw + gh) / 4.0 + h_margin).max(1.0);
-        self.cell_size = cs_w.min(cs_h).clamp(1.0, 64.0);
-        self.iso_offset = Vec2::ZERO;
-    }
-
-    // ── Save / load grid state ───────────────────────────────────────────────
-
-    // ── Selection actions ────────────────────────────────────────────────────
-
-    // ── Help modal ───────────────────────────────────────────────────────────
-
-    // ── Theme ────────────────────────────────────────────────────────────────
-
-    // ── Keyboard shortcuts ───────────────────────────────────────────────────
-
-    // ── UI panels ────────────────────────────────────────────────────────────
-
-    // ── Modal dialogs ────────────────────────────────────────────────────────
-
-    // ── Isometric 3-D canvas ─────────────────────────────────────────────────
 }
 
 // ---------------------------------------------------------------------------

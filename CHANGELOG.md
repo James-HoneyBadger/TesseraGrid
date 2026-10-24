@@ -1,10 +1,20 @@
 # Changelog
 
-All notable changes to LifeGrid are documented in this file.
+All notable changes to Tessera Grid are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+- Split the egui layer into focused modules: `app/mod.rs` now only holds shared
+  state and constructors, with behaviour in `actions`, `input`, `io`,
+  `selection`, `config`, `menu_bar`, `toolbar`, `statusbar` and `shell`.
+- Canvas rendering moved to `app/canvas/` (`flat`, `iso`, `paint`, `viewport`),
+  the sidebar to `app/sidebar/` (one module per card) and the modal dialogs to
+  `app/dialogs/` (one module per dialog).
+- Theme palettes moved to `src/theme/palettes.rs`; `Theme` itself stays in
+  `src/theme/mod.rs`.
 
 ## [6.0.0] — 2026-10-24
 

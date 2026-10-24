@@ -1,4 +1,16 @@
+//! State and media I/O: PNG, GIF, RLE, CSV and `.tessera` state files.
+
 use super::*;
+
+/// Grid snapshot written to `.tessera` state files.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedState {
+    automaton: String,
+    generation: u64,
+    width: usize,
+    height: usize,
+    cells: Vec<u8>,
+}
 
 impl TesseraGridApp {
     pub(super) fn export_png_dialog(&mut self) {

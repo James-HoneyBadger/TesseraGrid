@@ -248,14 +248,41 @@ TesseraGrid/              # repository name
 │   │   ├── main.rs          # CLI dispatch + GUI launch
 │   │   ├── cli.rs           # headless command line
 │   │   ├── app/             # egui layer (no engine logic)
-│   │   │   ├── mod.rs       # app state, helpers, eframe::App
-│   │   │   ├── canvas.rs    # 2-D and isometric rendering/painting
-│   │   │   ├── panels.rs    # sidebar controls
-│   │   │   ├── toolbar.rs   # menu bar and toolbar
-│   │   │   ├── dialogs.rs   # help, gallery, run-n, resize, about
-│   │   │   ├── statusbar.rs
-│   │   │   └── theme.rs
-│   │   ├── theme.rs         # color themes and canvas palettes
+│   │   │   ├── mod.rs       # shared state, enums, constructor
+│   │   │   ├── shell.rs     # eframe::App: frame loop, layout, exit
+│   │   │   ├── actions.rs   # step, reset, randomize, undo
+│   │   │   ├── input.rs     # keyboard shortcuts
+│   │   │   ├── io.rs        # PNG/GIF/RLE/CSV/state file I/O
+│   │   │   ├── selection.rs # copy, cut, paste, clear
+│   │   │   ├── config.rs    # settings persistence
+│   │   │   ├── menu_bar.rs  # File/Edit/Run/View/Help menus
+│   │   │   ├── toolbar.rs   # quick-action toolbar
+│   │   │   ├── statusbar.rs # status text and FPS counters
+│   │   │   ├── theme.rs     # applies ThemeColors to egui
+│   │   │   ├── canvas/      # flat and isometric rendering
+│   │   │   │   ├── mod.rs   # view dispatch
+│   │   │   │   ├── flat.rs  # 2-D grid, brush, selection
+│   │   │   │   ├── iso.rs   # isometric 3-D view
+│   │   │   │   ├── paint.rs # Bresenham brush strokes
+│   │   │   │   └── viewport.rs # zoom-to-fit helpers
+│   │   │   ├── sidebar/     # control cards
+│   │   │   │   ├── mod.rs   # card styling and composition
+│   │   │   │   ├── mode_info.rs
+│   │   │   │   ├── automaton.rs
+│   │   │   │   ├── view.rs
+│   │   │   │   ├── statistics.rs
+│   │   │   │   ├── export.rs
+│   │   │   │   └── selection.rs
+│   │   │   └── dialogs/     # floating dialogs
+│   │   │       ├── mod.rs
+│   │   │       ├── help.rs
+│   │   │       ├── gallery.rs
+│   │   │       ├── run_n.rs
+│   │   │       ├── resize.rs
+│   │   │       └── about.rs
+│   │   ├── theme/           # color themes
+│   │   │   ├── mod.rs       # Theme enum, names, accents
+│   │   │   └── palettes.rs  # per-theme palettes
 │   │   ├── sim.rs           # headless simulation controller
 │   │   ├── rle.rs           # RLE parser/encoder
 │   │   ├── patterns.rs      # built-in Conway patterns
@@ -285,7 +312,7 @@ cargo build --release
 ```
 
 Unit tests live next to the code (`src/automata/tests.rs`, `src/sim.rs`,
-`src/rle.rs`, `src/theme.rs`, `src/core/undo.rs`, `src/core/config.rs`), while
+`src/rle.rs`, `src/theme/mod.rs`, `src/core/undo.rs`, `src/core/config.rs`), while
 `tests/headless.rs` runs the real binary end to end.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.

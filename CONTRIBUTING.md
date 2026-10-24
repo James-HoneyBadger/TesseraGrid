@@ -95,8 +95,8 @@ cargo build --release
 
 - Add doc comments (`///`) for public items and `//!` module summaries for new modules.
 - Update `README.md`, `CHANGELOG.md`, and this file when behaviour changes.
-- Keep shortcut text in sync: `SHORTCUTS` in `src/app/mod.rs`, the in-app help
-  dialog, and the keyboard table in `README.md`.
+- Keep shortcut text in sync: `SHORTCUTS` in `src/app/dialogs/help.rs`, the
+  in-app help dialog, and the keyboard table in `README.md`.
 - CLI flags live in `src/cli.rs`; `tessera --help` is generated, so keep the
   README flag table aligned with it.
 - Screenshots live in `docs/screenshots/` and are referenced from `README.md`.
@@ -161,10 +161,10 @@ cargo build --release
 
 ## Adding a Color Theme
 
-1. Add a variant to `Theme` in `tessera-grid-rs/src/theme.rs`.
+1. Add a variant to `Theme` in `tessera-grid-rs/src/theme/mod.rs`.
 2. Handle it in `name()`, `from_name()` (add aliases if useful), `is_dark()` and
-   `colors()`.
-3. `colors()` needs window/panel/card/bar, stroke, faint, extreme, grid and
+   `theme/palettes.rs::colors()`.
+3. The palette needs window/panel/card/bar, stroke, faint, extreme, grid and
    success colours, plus a nine-entry cell palette where index 0 is the canvas
    background and 1–8 are the cell states.
 4. Run the theme tests: they check unique names, name round-tripping,
@@ -192,10 +192,10 @@ loading older files:
 |------|---------|
 | `tessera-grid-rs/src/main.rs` | CLI dispatch and GUI launch |
 | `tessera-grid-rs/src/cli.rs` | Headless command-line interface |
-| `tessera-grid-rs/src/app/` | egui state, canvas, panels, menus, dialogs, theme |
+| `tessera-grid-rs/src/app/` | egui shell, actions, input, I/O, canvas, sidebar, dialogs |
 | `tessera-grid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
 | `tessera-grid-rs/src/rle.rs` | RLE import/export |
-| `tessera-grid-rs/src/theme.rs` | Color themes and canvas palettes |
+| `tessera-grid-rs/src/theme/` | Theme enum, accents and per-theme palettes |
 | `tessera-grid-rs/src/automata/` | Automaton trait, implementations, rule tests |
 | `tessera-grid-rs/src/core/` | Grid, boundary modes, undo manager, config |
 | `tessera-grid-rs/src/export.rs` | PNG and GIF rendering |
