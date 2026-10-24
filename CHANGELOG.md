@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.1.0] — 2026-10-24
+
+### Added
+- **Timeline scrubber** below the canvas: the last 512 generations (64 MB
+  budget) are recorded as you step, can be inspected by dragging the slider, and
+  "Return to live" jumps back to the newest frame. Playing on from a scrubbed
+  position forks the history instead of overwriting the future.
+- **Pattern editor** (`Ctrl+P`): draw on a 16/24/32/48-cell draft, rotate, flip
+  or invert it, then stamp it into the centre of the grid or copy it as RLE.
+- `cargo deny` policy (`tessera-grid-rs/deny.toml`) covering advisories,
+  licenses, bans and sources, checked by a weekly security-audit workflow.
+- Coverage job in CI (`cargo llvm-cov`) publishing an `lcov.info` artifact.
+- Issue forms, a pull-request template and a 6.x announcement post
+  (`docs/announcing-tessera-grid.md`).
+
+### Changed
+- Stepping is multi-threaded end to end: neighbour counting and the per-cell
+  update run through Rayon (`Grid::map_cells`, `Grid::update_cells`), and the
+  per-step grid copy is gone.
+- Keyboard shortcuts keep working after clicking buttons or the timeline
+  slider; only text fields capture the keyboard, and `Space` still defers to a
+  focused button.
+
+### Fixed
+- Updated `crossbeam-epoch` (RUSTSEC-2026-0204) and the yanked
+  `clipboard-win` release; unmaintained/advisory exceptions are documented in
+  `deny.toml`.
+
 ## [6.0.0] — 2026-10-24
 
 ### Changed

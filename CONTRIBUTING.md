@@ -61,9 +61,18 @@ cargo build --release
    cargo fmt --all --check
    cargo clippy --all-targets -- -D warnings
    cargo test --all-targets
+   cargo deny check    # advisories, licenses, banned crates
    ```
 
 5. **Open a pull request** against `master`.
+
+---
+
+### Security
+
+- `cargo deny check` runs in CI on dependency changes and weekly. If an advisory
+  cannot be fixed yet, add it to the `ignore` list in `tessera-grid-rs/deny.toml`
+  **with a comment** explaining why it does not affect us.
 
 ---
 
@@ -85,7 +94,11 @@ cargo build --release
   `#[cfg(test)]` module of `src/sim.rs`; parsing/serialisation next to the code
   (`rle.rs`, `core/undo.rs`, `core/config.rs`).
 - End-to-end CLI coverage lives in `tests/headless.rs` and runs the real binary.
+- UI-state helpers that are easy to get wrong (pattern drafts, timeline
+  history) belong in their own `#[cfg(test)]` modules.
 - Run everything with `cargo test --all-targets`.
+- Coverage is measured in CI with `cargo llvm-cov --all-targets --lcov`; run the
+  same command locally and inspect `lcov.info` if you add untested branches.
 
 ### Safety
 
@@ -195,6 +208,8 @@ The egui layer is split by responsibility so each file stays small:
 | New sidebar card | `src/app/sidebar/<name>.rs` with a `ui_<name>_section` method, wired into the card list in `src/app/sidebar/mod.rs` |
 | New dialog | `src/app/dialogs/<name>.rs` with a `ui_<name>` method, called from the frame loop in `src/app/shell.rs` |
 | Keyboard shortcut | handle it in `src/app/input.rs` and add a row to `SHORTCUTS` in `src/app/dialogs/help.rs` |
+| Timeline behaviour | `src/sim.rs` (history, scrubbing) plus `src/app/timeline.rs` (the bar) |
+| Pattern draft operations | `PatternDraft` in `src/patterns.rs`; the dialog in `src/app/dialogs/editor.rs` |
 | Flat/isometric drawing | `src/app/canvas/{flat,iso,paint,viewport}.rs`; `src/app/canvas/mod.rs` only dispatches |
 | Menu or toolbar button | `src/app/menu_bar.rs` or `src/app/toolbar.rs` |
 | Simulation action (step, reset, undo…) | `src/app/actions.rs`, delegating to `crate::sim` |
@@ -210,7 +225,7 @@ free of egui so the CLI keeps working headlessly.
 |------|---------|
 | `tessera-grid-rs/src/main.rs` | CLI dispatch and GUI launch |
 | `tessera-grid-rs/src/cli/` | CLI arguments and headless run |
-| `tessera-grid-rs/src/app/` | egui shell, actions, input, I/O, canvas, sidebar, dialogs |
+| `tessera-grid-rs/src/app/` | egui shell, actions, input, I/O, canvas, sidebar, dialogs, timeline |
 | `tessera-grid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
 | `tessera-grid-rs/src/rle.rs` | RLE import/export |
 | `tessera-grid-rs/src/theme/` | Theme enum, accents and per-theme palettes |
@@ -219,7 +234,8 @@ free of egui so the CLI keeps working headlessly.
 | `tessera-grid-rs/src/export.rs` | PNG and GIF rendering |
 | `tessera-grid-rs/src/patterns.rs` | Built-in Conway pattern data |
 | `tessera-grid-rs/tests/` | End-to-end CLI tests |
-| `docs/screenshots/` | Screenshots embedded in the README |
+| `tessera-grid-rs/deny.toml` | cargo-deny policy for advisories, licenses and sources |
+| `docs/screenshots/` | Screenshots embedded in the README and release post |
 
 ---
 

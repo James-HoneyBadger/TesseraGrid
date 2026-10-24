@@ -2,14 +2,18 @@
 
 [![CI](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/ci.yml)
 [![Release](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/release.yml/badge.svg)](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/release.yml)
+[![Security audit](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/audit.yml/badge.svg)](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/audit.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A fast, native cellular-automaton simulator built with **Rust** and **egui**.
 
 Tessera Grid runs ten classic and custom automata in one interactive window — with a
 pattern gallery, seeded random soups, custom B/S rules, an isometric 3-D view,
-RLE import/export, PNG/GIF capture, a live population chart, and a headless CLI
-for scripted runs.
+RLE import/export, PNG/GIF capture, a live population chart, a timeline scrubber,
+an in-app pattern editor, and a headless CLI for scripted runs.
+
+New here? Read the [6.x announcement](docs/announcing-tessera-grid.md) for the
+rename, themes, timeline and pattern editor.
 
 ---
 
@@ -31,9 +35,15 @@ for scripted runs.
 - **RLE** — import from and copy to the clipboard; exports carry the correct
   per-mode rule header and multi-state letters.
 - **Export** — PNG snapshot or animated GIF (frames buffered to a 256 MB budget).
+- **Timeline scrubbing** — step back through the last 512 generations (64 MB
+  budget) and fork history by playing on from an earlier frame.
+- **Pattern editor** — draw a draft pattern on a 16–48 cell canvas, rotate, flip
+  or invert it, then stamp it into the grid or copy it as RLE.
 - **Undo / redo** — 100 snapshots covering every edit, including generation.
 - **Live statistics** — population chart with axes, peak/min/average, CSV export.
 - **Session state** — save/load `.tessera` JSON files (legacy `.lifegrid` files still load); UI settings persist.
+- **Multi-threaded stepping** — neighbour counting and cell updates run on all
+  cores via Rayon.
 - **Headless CLI** — drive the same engine from scripts and CI.
 - **8 color themes** — Dark, Light, Nord, Solarized Dark, Gruvbox, Dracula,
   High Contrast, and Paper; switch instantly with `T`.
@@ -175,6 +185,7 @@ cargo run --release -- --steps 100 --stats
 | Deselect | `Escape` |
 | Save / open state | `Ctrl+S` / `Ctrl+O` |
 | Export PNG | `Ctrl+E` |
+| Pattern editor | `Ctrl+P` |
 | Shortcut reference | `H` or `F1` |
 
 ### Themes
@@ -261,6 +272,7 @@ TesseraGrid/              # repository name
 │   │   │   ├── menu_bar.rs  # File/Edit/Run/View/Help menus
 │   │   │   ├── toolbar.rs   # quick-action toolbar
 │   │   │   ├── statusbar.rs # status text and FPS counters
+│   │   │   ├── timeline.rs  # generation scrubber bar
 │   │   │   ├── theme.rs     # applies ThemeColors to egui
 │   │   │   ├── canvas/      # flat and isometric rendering
 │   │   │   │   ├── mod.rs   # view dispatch
@@ -280,6 +292,7 @@ TesseraGrid/              # repository name
 │   │   │       ├── mod.rs
 │   │   │       ├── help.rs
 │   │   │       ├── gallery.rs
+│   │   │       ├── editor.rs   # pattern editor
 │   │   │       ├── run_n.rs
 │   │   │       ├── resize.rs
 │   │   │       └── about.rs
@@ -292,9 +305,12 @@ TesseraGrid/              # repository name
 │   │   ├── export.rs        # PNG and GIF rendering
 │   │   ├── automata/        # 10 automata behind one trait + tests
 │   │   └── core/            # grid, boundary, undo, config
+│   ├── deny.toml            # cargo-deny policy (advisories, licenses)
 │   └── tests/headless.rs    # end-to-end CLI tests
-├── .github/workflows/       # CI and release pipelines
-├── docs/screenshots/        # images referenced by this README
+├── .github/workflows/       # CI, security audit and release pipelines
+├── docs/
+│   ├── announcing-tessera-grid.md  # 6.x release post
+│   └── screenshots/         # images referenced by the docs
 ├── run-simulation.sh        # build + launch helper (forwards CLI flags)
 ├── rust-toolchain.toml      # pinned Rust channel/components
 ├── CHANGELOG.md
@@ -311,7 +327,9 @@ cd tessera-grid-rs
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
-cargo build --release
+cargo build --release --locked
+cargo deny check          # advisories, licenses, banned crates
+cargo llvm-cov --all-targets --lcov --output-path lcov.info   # optional coverage
 ```
 
 Unit tests live next to the code (`src/automata/tests.rs`, `src/sim.rs`,
@@ -324,10 +342,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
 ## Roadmap
 
-- [ ] GPU-accelerated grid stepping
+- [x] Multi-threaded grid stepping (Rayon)
+- [x] In-app pattern editor
+- [x] Timeline scrubber over recorded history
+- [ ] GPU (`wgpu` compute) stepping backend
 - [ ] Runtime plugin loading for custom automata
-- [ ] In-app pattern editor and RLE multistate authoring
-- [ ] Timeline scrubber over recorded history
+- [ ] RLE multistate authoring in the pattern editor
 - [ ] MP4/WebM export
 
 ---
