@@ -77,41 +77,6 @@ impl Grid {
         }
     }
 
-    /// Like [`neighbor_counts`] but counts any cell with `value > 0`.
-    ///
-    /// Uses rayon parallel iteration for grids larger than 50 000 cells.
-    #[allow(dead_code)]
-    pub fn neighbor_counts_alive(&self, boundary: BoundaryMode) -> Vec<u8> {
-        let h = self.height;
-        let w = self.width;
-        let n = h * w;
-        let cells = &self.cells;
-        let compute = |i: usize| {
-            let y = i / w;
-            let x = i % w;
-            let mut c = 0u8;
-            for dy in -1i32..=1 {
-                for dx in -1i32..=1 {
-                    if dy == 0 && dx == 0 {
-                        continue;
-                    }
-                    if let Some((ny, nx)) = boundary.resolve(y as i32 + dy, x as i32 + dx, h, w) {
-                        if cells[ny * w + nx] > 0 {
-                            c += 1;
-                        }
-                    }
-                }
-            }
-            c
-        };
-        if n >= 50_000 {
-            use rayon::prelude::*;
-            (0..n).into_par_iter().map(compute).collect()
-        } else {
-            (0..n).map(compute).collect()
-        }
-    }
-
     /// Returns `(alive_count, color_sum)` neighbour arrays, used by
     /// multi-state automata like Immigration and Rainbow.
     ///

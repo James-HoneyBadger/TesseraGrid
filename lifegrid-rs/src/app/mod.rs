@@ -168,6 +168,7 @@ pub struct LifeGridApp {
 
     // ── Persisted layout ─────────────────────────────────────────────────────
     panel_width: f32,
+    theme_key: Option<(bool, bool, Color32)>,
 }
 
 impl LifeGridApp {
@@ -272,6 +273,7 @@ impl LifeGridApp {
             iso_offset: Vec2::ZERO,
             iso_height: cfg.iso_height,
             panel_width: cfg.panel_width,
+            theme_key: None,
         }
     }
 

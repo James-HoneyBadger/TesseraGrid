@@ -56,14 +56,20 @@ pub(crate) fn mode_accent_color(mode: &str) -> Color32 {
 }
 
 impl LifeGridApp {
-    pub(super) fn apply_theme(&self, ctx: &egui::Context) {
+    pub(super) fn apply_theme(&mut self, ctx: &egui::Context) {
+        let accent = mode_accent_color(&self.selected_mode);
+        let key = (self.dark_mode, self.compact_mode, accent);
+        if self.theme_key == Some(key) {
+            return;
+        }
+        self.theme_key = Some(key);
+
         ctx.set_theme(if self.dark_mode {
             egui::Theme::Dark
         } else {
             egui::Theme::Light
         });
 
-        let accent = mode_accent_color(&self.selected_mode);
         let mut style = (*ctx.global_style()).clone();
         {
             let visuals = &mut style.visuals;
