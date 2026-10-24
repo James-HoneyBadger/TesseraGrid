@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -63,7 +63,7 @@ impl Automaton for HighLife {
         let cy = h / 2;
         match pattern {
             "Replicator" => {
-                for &(dx, dy) in &[(1i32,0),(0,1),(1,1),(2,1),(0,2),(2,2),(1,3)] {
+                for &(dx, dy) in &[(1i32, 0), (0, 1), (1, 1), (2, 1), (0, 2), (2, 2), (1, 3)] {
                     let x = cx as i32 + dx - 1;
                     let y = cy as i32 + dy - 1;
                     if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
@@ -71,10 +71,10 @@ impl Automaton for HighLife {
                     }
                 }
             }
-            "Random Soup" | _ => {
-                let mut rng = rand::thread_rng();
+            _ => {
+                let mut rng = rand::rng();
                 for cell in self.grid.cells.iter_mut() {
-                    *cell = u8::from(rng.gen::<f32>() < 0.15);
+                    *cell = u8::from(rng.random::<f32>() < 0.15);
                 }
             }
         }

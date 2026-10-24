@@ -57,9 +57,13 @@ impl Grid {
             let mut c = 0u8;
             for dy in -1i32..=1 {
                 for dx in -1i32..=1 {
-                    if dy == 0 && dx == 0 { continue; }
+                    if dy == 0 && dx == 0 {
+                        continue;
+                    }
                     if let Some((ny, nx)) = boundary.resolve(y as i32 + dy, x as i32 + dx, h, w) {
-                        if cells[ny * w + nx] == check_val { c += 1; }
+                        if cells[ny * w + nx] == check_val {
+                            c += 1;
+                        }
                     }
                 }
             }
@@ -88,9 +92,13 @@ impl Grid {
             let mut c = 0u8;
             for dy in -1i32..=1 {
                 for dx in -1i32..=1 {
-                    if dy == 0 && dx == 0 { continue; }
+                    if dy == 0 && dx == 0 {
+                        continue;
+                    }
                     if let Some((ny, nx)) = boundary.resolve(y as i32 + dy, x as i32 + dx, h, w) {
-                        if cells[ny * w + nx] > 0 { c += 1; }
+                        if cells[ny * w + nx] > 0 {
+                            c += 1;
+                        }
                     }
                 }
             }
@@ -120,10 +128,15 @@ impl Grid {
             let mut s = 0u32;
             for dy in -1i32..=1 {
                 for dx in -1i32..=1 {
-                    if dy == 0 && dx == 0 { continue; }
+                    if dy == 0 && dx == 0 {
+                        continue;
+                    }
                     if let Some((ny, nx)) = boundary.resolve(y as i32 + dy, x as i32 + dx, h, w) {
                         let v = cells[ny * w + nx];
-                        if v > 0 { c += 1; s += v as u32; }
+                        if v > 0 {
+                            c += 1;
+                            s += v as u32;
+                        }
                     }
                 }
             }

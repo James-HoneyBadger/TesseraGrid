@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -31,7 +31,11 @@ impl Automaton for ImmigrationGame {
             let alive = old[i] > 0;
             let nc = counts[i];
             self.grid.cells[i] = if alive {
-                if nc == 2 || nc == 3 { old[i] } else { 0 }
+                if nc == 2 || nc == 3 {
+                    old[i]
+                } else {
+                    0
+                }
             } else if nc == 3 {
                 let avg = sums[i] / 3;
                 (avg % 3 + 1) as u8
@@ -39,7 +43,6 @@ impl Automaton for ImmigrationGame {
                 0
             };
         }
-
     }
 
     fn reset(&mut self) {
@@ -68,14 +71,14 @@ impl Automaton for ImmigrationGame {
 
         match pattern {
             "Color Mix" => {
-                for &(dx, dy) in &[(1i32,0),(2,1),(0,2),(1,2),(2,2)] {
+                for &(dx, dy) in &[(1i32, 0), (2, 1), (0, 2), (1, 2), (2, 2)] {
                     let x = cx - 20 + dx;
                     let y = cy - 15 + dy;
                     if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
                         self.grid.set(y as usize, x as usize, 1);
                     }
                 }
-                for &(dx, dy) in &[(0i32,0),(1,0),(2,0)] {
+                for &(dx, dy) in &[(0i32, 0), (1, 0), (2, 0)] {
                     let x = cx + dx - 1;
                     let y = cy - 15 + dy;
                     if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
@@ -84,10 +87,10 @@ impl Automaton for ImmigrationGame {
                 }
             }
             _ => {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 for cell in self.grid.cells.iter_mut() {
-                    if rng.gen::<f32>() < 0.15 {
-                        *cell = rng.gen_range(1..=3);
+                    if rng.random::<f32>() < 0.15 {
+                        *cell = rng.random_range(1..=3);
                     }
                 }
             }

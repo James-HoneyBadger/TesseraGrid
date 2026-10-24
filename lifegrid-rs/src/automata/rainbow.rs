@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -31,10 +31,13 @@ impl Automaton for RainbowGame {
             let alive = old[i] > 0;
             let nc = counts[i];
             self.grid.cells[i] = if alive {
-                if nc == 2 || nc == 3 { old[i] } else { 0 }
+                if nc == 2 || nc == 3 {
+                    old[i]
+                } else {
+                    0
+                }
             } else if nc == 3 {
-                let avg = (sums[i] / 3).clamp(1, 6) as u8;
-                avg
+                (sums[i] / 3).clamp(1, 6) as u8
             } else {
                 0
             };
@@ -60,10 +63,10 @@ impl Automaton for RainbowGame {
 
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
-            if rng.gen::<f32>() < 0.15 {
-                *cell = rng.gen_range(1..=6);
+            if rng.random::<f32>() < 0.15 {
+                *cell = rng.random_range(1..=6);
             }
         }
     }

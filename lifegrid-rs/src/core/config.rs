@@ -27,9 +27,15 @@ pub struct AppConfig {
     pub compact_mode: bool,
 }
 
-fn default_true() -> bool { true }
-fn default_panel_width() -> f32 { 220.0 }
-fn default_paint_state() -> u8 { 1 }
+fn default_true() -> bool {
+    true
+}
+fn default_panel_width() -> f32 {
+    220.0
+}
+fn default_paint_state() -> u8 {
+    1
+}
 
 impl Default for AppConfig {
     fn default() -> Self {

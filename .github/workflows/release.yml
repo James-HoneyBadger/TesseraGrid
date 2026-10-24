@@ -8,120 +8,64 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  create-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.13'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install build
-
-    - name: Run tests
-      run: |
-        pip install pytest
-        pytest tests/ -v
-
-    - name: Build package
-      run: |
-        python -m build
-
-    - name: Generate changelog
-      id: changelog
-      run: |
-        echo "## Changes in this Release" > RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"- %s (%h)" >> RELEASE_NOTES.md
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: dist/*
-        body_path: RELEASE_NOTES.md
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-executables:
-    name: Build Executables
+  build:
+    name: Build ${{ matrix.asset }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            asset_name: lifegrid-linux
+            asset: lifegrid-linux-x86_64
+            binary: lifegrid
           - os: windows-latest
-            asset_name: lifegrid-windows.exe
+            asset: lifegrid-windows-x86_64.exe
+            binary: lifegrid.exe
           - os: macos-latest
-            asset_name: lifegrid-macos
-
+            asset: lifegrid-macos-arm64
+            binary: lifegrid
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GUI build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
+      - name: Build release binary
+        run: cargo build --release --locked
+        working-directory: lifegrid-rs
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "lifegrid-rs/target/release/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+      - name: Strip binary
+        if: runner.os != 'Windows'
+        run: strip -s "dist/${{ matrix.asset }}" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.13'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-
-    - name: Build executable
-      run: |
-        pyinstaller --onefile --windowed --name lifegrid src/main.py
-
-    - name: Upload executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.asset_name }}
-        path: dist/lifegrid*
-
-  upload-executables:
-    name: Upload Executables to Release
+  release:
+    name: Publish GitHub release
+    needs: build
     runs-on: ubuntu-latest
-    needs: [create-release, build-executables]
-
     steps:
-    - name: Download Linux executable
-      uses: actions/download-artifact@v4
-      with:
-        name: lifegrid-linux
-        path: ./executables/
-
-    - name: Download Windows executable
-      uses: actions/download-artifact@v4
-      with:
-        name: lifegrid-windows.exe
-        path: ./executables/
-
-    - name: Download macOS executable
-      uses: actions/download-artifact@v4
-      with:
-        name: lifegrid-macos
-        path: ./executables/
-
-    - name: Upload to Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: ./executables/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lifegrid-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

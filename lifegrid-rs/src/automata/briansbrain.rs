@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -30,8 +30,8 @@ impl Automaton for BriansBrain {
         for i in 0..old.len() {
             self.grid.cells[i] = match old[i] {
                 0 => u8::from(firing_neighbors[i] == 2), // Off → Firing if exactly 2 firing nbrs
-                1 => 2,                                   // Firing → Refractory
-                _ => 0,                                   // Refractory → Off
+                1 => 2,                                  // Firing → Refractory
+                _ => 0,                                  // Refractory → Off
             };
         }
     }
@@ -55,9 +55,9 @@ impl Automaton for BriansBrain {
 
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
-            *cell = u8::from(rng.gen::<f32>() < 0.08);
+            *cell = u8::from(rng.random::<f32>() < 0.08);
         }
     }
 

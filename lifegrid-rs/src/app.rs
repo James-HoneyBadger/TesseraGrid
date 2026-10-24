@@ -52,16 +52,16 @@ fn aging_color(base: Color32, age: u32) -> Color32 {
 fn mode_accent_color(mode: &str) -> Color32 {
     match mode {
         "Conway's Game of Life" => Color32::from_rgb(0, 180, 220),
-        "High Life"             => Color32::from_rgb(0, 210, 120),
-        "Hexagonal Life"        => Color32::from_rgb(160, 80, 240),
-        "Immigration Game"      => Color32::from_rgb(240, 160, 0),
-        "Rainbow Game"          => Color32::from_rgb(240, 60, 120),
-        "Langton's Ant"         => Color32::from_rgb(255, 120, 0),
-        "Wireworld"             => Color32::from_rgb(255, 210, 0),
-        "Brian's Brain"         => Color32::from_rgb(80, 140, 255),
-        "Generations"           => Color32::from_rgb(0, 220, 180),
-        "Custom Rules"          => Color32::from_rgb(180, 180, 180),
-        _                       => Color32::GRAY,
+        "High Life" => Color32::from_rgb(0, 210, 120),
+        "Hexagonal Life" => Color32::from_rgb(160, 80, 240),
+        "Immigration Game" => Color32::from_rgb(240, 160, 0),
+        "Rainbow Game" => Color32::from_rgb(240, 60, 120),
+        "Langton's Ant" => Color32::from_rgb(255, 120, 0),
+        "Wireworld" => Color32::from_rgb(255, 210, 0),
+        "Brian's Brain" => Color32::from_rgb(80, 140, 255),
+        "Generations" => Color32::from_rgb(0, 220, 180),
+        "Custom Rules" => Color32::from_rgb(180, 180, 180),
+        _ => Color32::GRAY,
     }
 }
 
@@ -106,7 +106,9 @@ fn parse_rle(rle: &str) -> Vec<(i32, i32)> {
             }
             '!' => break,
             ' ' | '\t' | '\r' | '\n' => {}
-            _ => { count_str.clear(); }
+            _ => {
+                count_str.clear();
+            }
         }
     }
     pts
@@ -213,14 +215,14 @@ pub struct LifeGridApp {
 
     // ── Tool mode & selection ─────────────────────────────────────────────────
     tool_mode: ToolMode,
-    selection: Option<(i64, i64, i64, i64)>,   // (x0, y0, x1, y1) grid coords, inclusive
-    selection_anchor: Option<(i64, i64)>,       // anchor cell during drag
+    selection: Option<(i64, i64, i64, i64)>, // (x0, y0, x1, y1) grid coords, inclusive
+    selection_anchor: Option<(i64, i64)>,    // anchor cell during drag
     clipboard: Option<(Vec<u8>, usize, usize)>, // (cells, width, height)
 
     // ── Isometric 3-D view ─────────────────────────────────────────────────
     view_mode: ViewMode,
-    iso_offset: Vec2,     // manual pan in iso view
-    iso_height: f32,      // block height multiplier (0.25–4.0)
+    iso_offset: Vec2, // manual pan in iso view
+    iso_height: f32,  // block height multiplier (0.25–4.0)
 }
 
 impl LifeGridApp {
@@ -361,12 +363,12 @@ impl LifeGridApp {
         if self.age_grid.len() != n {
             self.age_grid = vec![0u32; n];
         }
-        for i in 0..n {
-            if cells[i] != 0 {
-                self.age_grid[i] = self.age_grid[i].saturating_add(1);
+        for (i, &state) in cells.iter().enumerate() {
+            self.age_grid[i] = if state != 0 {
+                self.age_grid[i].saturating_add(1)
             } else {
-                self.age_grid[i] = 0;
-            }
+                0
+            };
         }
 
         self.pop_history.push(pop);
@@ -436,7 +438,9 @@ impl LifeGridApp {
     fn zoom_to_fit(&mut self) {
         let cw = self.canvas_rect.width();
         let ch = self.canvas_rect.height();
-        if cw <= 0.0 || ch <= 0.0 { return; }
+        if cw <= 0.0 || ch <= 0.0 {
+            return;
+        }
         let (gw, gh) = {
             let g = self.automaton.get_grid();
             (g.width as f32, g.height as f32)
@@ -453,7 +457,9 @@ impl LifeGridApp {
     fn iso_fit(&mut self) {
         let cw = self.canvas_rect.width();
         let ch = self.canvas_rect.height();
-        if cw <= 0.0 || ch <= 0.0 { return; }
+        if cw <= 0.0 || ch <= 0.0 {
+            return;
+        }
         let (gw, gh) = {
             let g = self.automaton.get_grid();
             (g.width as f32, g.height as f32)
@@ -473,17 +479,32 @@ impl LifeGridApp {
         let w = grid.width;
         let h = grid.height;
         // Find bounding box of live cells.
-        let mut x0 = w; let mut y0 = h; let mut x1 = 0usize; let mut y1 = 0usize;
+        let mut x0 = w;
+        let mut y0 = h;
+        let mut x1 = 0usize;
+        let mut y1 = 0usize;
         let mut found = false;
         for y in 0..h {
             for x in 0..w {
                 if grid.get(y, x) != 0 {
-                    if !found { x0 = x; y0 = y; x1 = x; y1 = y; found = true; }
-                    else { x0 = x0.min(x); x1 = x1.max(x); y0 = y0.min(y); y1 = y1.max(y); }
+                    if !found {
+                        x0 = x;
+                        y0 = y;
+                        x1 = x;
+                        y1 = y;
+                        found = true;
+                    } else {
+                        x0 = x0.min(x);
+                        x1 = x1.max(x);
+                        y0 = y0.min(y);
+                        y1 = y1.max(y);
+                    }
                 }
             }
         }
-        if !found { return "x = 0, y = 0, rule = B3/S23\n!".to_owned(); }
+        if !found {
+            return "x = 0, y = 0, rule = B3/S23\n!".to_owned();
+        }
         let rw = x1 - x0 + 1;
         let rh = y1 - y0 + 1;
         let mut out = format!("x = {}, y = {}, rule = B3/S23\n", rw, rh);
@@ -498,12 +519,18 @@ impl LifeGridApp {
                 }
             }
             // Omit trailing dead cells.
-            while matches!(runs.last(), Some(('b', _))) { runs.pop(); }
+            while matches!(runs.last(), Some(('b', _))) {
+                runs.pop();
+            }
             for (ch, count) in &runs {
-                if *count > 1 { out.push_str(&count.to_string()); }
+                if *count > 1 {
+                    out.push_str(&count.to_string());
+                }
                 out.push(*ch);
             }
-            if y < y1 { out.push('$'); }
+            if y < y1 {
+                out.push('$');
+            }
         }
         out.push('!');
         out
@@ -585,9 +612,13 @@ impl LifeGridApp {
                 let g = self.automaton.get_grid();
                 (g.width as i64, g.height as i64)
             };
-            let x0c = x0.max(0) as usize; let y0c = y0.max(0) as usize;
-            let x1c = x1.min(gw - 1) as usize; let y1c = y1.min(gh - 1) as usize;
-            if x0c > x1c || y0c > y1c { return; }
+            let x0c = x0.max(0) as usize;
+            let y0c = y0.max(0) as usize;
+            let x1c = x1.min(gw - 1) as usize;
+            let y1c = y1.min(gh - 1) as usize;
+            if x0c > x1c || y0c > y1c {
+                return;
+            }
             let cw = x1c - x0c + 1;
             let ch = y1c - y0c + 1;
             let mut cells = vec![0u8; cw * ch];
@@ -622,8 +653,11 @@ impl LifeGridApp {
             let grid = self.automaton.get_grid_mut();
             for dy in 0..ch {
                 for dx in 0..cw {
-                    let gx = px + dx; let gy = py + dy;
-                    if gx < gw && gy < gh { grid.set(gy, gx, cells[dy * cw + dx]); }
+                    let gx = px + dx;
+                    let gy = py + dy;
+                    if gx < gw && gy < gh {
+                        grid.set(gy, gx, cells[dy * cw + dx]);
+                    }
                 }
             }
             self.set_status(format!("Pasted {}×{} region", cw, ch));
@@ -636,11 +670,17 @@ impl LifeGridApp {
                 let g = self.automaton.get_grid();
                 (g.width as i64, g.height as i64)
             };
-            let x0c = x0.max(0) as usize; let y0c = y0.max(0) as usize;
-            let x1c = x1.min(gw - 1) as usize; let y1c = y1.min(gh - 1) as usize;
+            let x0c = x0.max(0) as usize;
+            let y0c = y0.max(0) as usize;
+            let x1c = x1.min(gw - 1) as usize;
+            let y1c = y1.min(gh - 1) as usize;
             self.push_undo();
             let grid = self.automaton.get_grid_mut();
-            for y in y0c..=y1c { for x in x0c..=x1c { grid.set(y, x, 0); } }
+            for y in y0c..=y1c {
+                for x in x0c..=x1c {
+                    grid.set(y, x, 0);
+                }
+            }
             self.set_status("Selection cleared");
         }
     }
@@ -648,7 +688,9 @@ impl LifeGridApp {
     // ── Help modal ───────────────────────────────────────────────────────────
 
     fn ui_help_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_help { return; }
+        if !self.show_help {
+            return;
+        }
         let mut open = true;
         egui::Window::new("\u{2328}  Keyboard Shortcuts")
             .collapsible(false)
@@ -662,24 +704,24 @@ impl LifeGridApp {
                     .striped(true)
                     .show(ui, |ui| {
                         let entries: &[(&str, &str)] = &[
-                            ("Space",              "Play / Pause"),
-                            ("S",                  "Step one generation"),
-                            ("R",                  "Reset pattern"),
-                            ("G",                  "Toggle grid lines"),
-                            ("F",                  "Zoom to fit grid"),
-                            ("V",                  "Toggle isometric 3-D view"),
-                            ("+  /  −",            "Zoom in / out"),
-                            ("Mouse wheel",        "Zoom (centred on cursor)"),
-                            ("Middle-click drag",  "Pan viewport"),
-                            ("Arrow keys",         "Pan viewport"),
-                            ("Ctrl+Z",             "Undo"),
+                            ("Space", "Play / Pause"),
+                            ("S", "Step one generation"),
+                            ("R", "Reset pattern"),
+                            ("G", "Toggle grid lines"),
+                            ("F", "Zoom to fit grid"),
+                            ("V", "Toggle isometric 3-D view"),
+                            ("+  /  −", "Zoom in / out"),
+                            ("Mouse wheel", "Zoom (centred on cursor)"),
+                            ("Middle-click drag", "Pan viewport"),
+                            ("Arrow keys", "Pan viewport"),
+                            ("Ctrl+Z", "Undo"),
                             ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
-                            ("Ctrl+C",             "Copy selection"),
-                            ("Ctrl+X",             "Cut selection"),
-                            ("Ctrl+V",             "Paste clipboard"),
-                            ("Delete",             "Clear selected cells"),
-                            ("Escape",             "Deselect"),
-                            ("H  /  F1",           "This help dialog"),
+                            ("Ctrl+C", "Copy selection"),
+                            ("Ctrl+X", "Cut selection"),
+                            ("Ctrl+V", "Paste clipboard"),
+                            ("Delete", "Clear selected cells"),
+                            ("Escape", "Deselect"),
+                            ("H  /  F1", "This help dialog"),
                         ];
                         for (key, desc) in entries {
                             ui.label(egui::RichText::new(*key).monospace().strong());
@@ -688,9 +730,13 @@ impl LifeGridApp {
                         }
                     });
                 ui.add_space(8.0);
-                if ui.button("Close").clicked() { self.show_help = false; }
+                if ui.button("Close").clicked() {
+                    self.show_help = false;
+                }
             });
-        if !open { self.show_help = false; }
+        if !open {
+            self.show_help = false;
+        }
     }
 
     fn save_config(&self) {
@@ -719,36 +765,38 @@ impl LifeGridApp {
     // ── Theme ────────────────────────────────────────────────────────────────
 
     fn apply_theme(&self, ctx: &egui::Context) {
-        let mut visuals = if self.dark_mode {
-            egui::Visuals::dark()
+        ctx.set_theme(if self.dark_mode {
+            egui::Theme::Dark
         } else {
-            egui::Visuals::light()
-        };
+            egui::Theme::Light
+        });
 
-        if self.dark_mode {
-            visuals.window_fill = Color32::from_rgb(22, 24, 30);
-            visuals.panel_fill = Color32::from_rgb(18, 20, 26);
-            visuals.faint_bg_color = Color32::from_rgb(30, 34, 42);
-            visuals.extreme_bg_color = Color32::from_rgb(12, 14, 20);
-        } else {
-            visuals.window_fill = Color32::from_rgb(248, 249, 252);
-            visuals.panel_fill = Color32::from_rgb(241, 244, 249);
-            visuals.faint_bg_color = Color32::from_rgb(231, 236, 243);
-            visuals.extreme_bg_color = Color32::from_rgb(220, 226, 236);
+        let accent = mode_accent_color(&self.selected_mode);
+        let mut style = (*ctx.global_style()).clone();
+        {
+            let visuals = &mut style.visuals;
+            if self.dark_mode {
+                visuals.window_fill = Color32::from_rgb(22, 24, 30);
+                visuals.panel_fill = Color32::from_rgb(18, 20, 26);
+                visuals.faint_bg_color = Color32::from_rgb(30, 34, 42);
+                visuals.extreme_bg_color = Color32::from_rgb(12, 14, 20);
+            } else {
+                visuals.window_fill = Color32::from_rgb(248, 249, 252);
+                visuals.panel_fill = Color32::from_rgb(241, 244, 249);
+                visuals.faint_bg_color = Color32::from_rgb(231, 236, 243);
+                visuals.extreme_bg_color = Color32::from_rgb(220, 226, 236);
+            }
+
+            visuals.widgets.active.corner_radius = CornerRadius::same(6);
+            visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
+            visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
+            visuals.widgets.open.corner_radius = CornerRadius::same(6);
+
+            visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, accent);
+            visuals.selection.bg_fill = accent.linear_multiply(0.25);
+            visuals.selection.stroke = egui::Stroke::new(1.0_f32, accent);
         }
 
-        visuals.widgets.active.corner_radius = CornerRadius::same(6);
-        visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
-        visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
-        visuals.widgets.open.corner_radius = CornerRadius::same(6);
-
-        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, mode_accent_color(&self.selected_mode));
-        visuals.selection.bg_fill = mode_accent_color(&self.selected_mode).linear_multiply(0.25);
-        visuals.selection.stroke = egui::Stroke::new(1.0_f32, mode_accent_color(&self.selected_mode));
-
-        ctx.set_visuals(visuals);
-
-        let mut style = (*ctx.style()).clone();
         if self.compact_mode {
             style.spacing.item_spacing = Vec2::new(6.0, 6.0);
             style.spacing.button_padding = Vec2::new(8.0, 5.0);
@@ -764,20 +812,22 @@ impl LifeGridApp {
         style.spacing.indent = 14.0;
         style.visuals.window_corner_radius = CornerRadius::same(10);
         style.visuals.menu_corner_radius = CornerRadius::same(8);
-        ctx.set_style(style);
+        ctx.set_global_style(style);
     }
 
     // ── Keyboard shortcuts ───────────────────────────────────────────────────
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
         // Skip shortcuts when a text field is focused (e.g., custom rule input).
-        if ctx.wants_keyboard_input() {
+        if ctx.egui_wants_keyboard_input() {
             return;
         }
         ctx.input(|i| {
             if i.key_pressed(egui::Key::Space) {
                 self.running = !self.running;
-                if self.running { self.last_step = Instant::now(); }
+                if self.running {
+                    self.last_step = Instant::now();
+                }
             }
             if i.key_pressed(egui::Key::S) {
                 self.push_undo();
@@ -795,7 +845,9 @@ impl LifeGridApp {
                 let current = self.automaton.get_grid().cells.clone();
                 if let Some(prev) = self.undo.undo(current) {
                     self.automaton.get_grid_mut().cells = prev;
-                    if self.generation > 0 { self.generation -= 1; }
+                    if self.generation > 0 {
+                        self.generation -= 1;
+                    }
                 }
             }
             if i.modifiers.ctrl
@@ -813,26 +865,37 @@ impl LifeGridApp {
                 self.status_msg = Some(("Use Export PNG… button".into(), Instant::now()));
             }
             // Zoom
-            let plus =
-                i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals);
+            let plus = i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals);
             let minus = i.key_pressed(egui::Key::Minus);
-            if plus  { self.cell_size = (self.cell_size + 1.0).min(64.0); }
-            if minus { self.cell_size = (self.cell_size - 1.0).max(1.0); }
+            if plus {
+                self.cell_size = (self.cell_size + 1.0).min(64.0);
+            }
+            if minus {
+                self.cell_size = (self.cell_size - 1.0).max(1.0);
+            }
 
             // Zoom to fit
             if i.key_pressed(egui::Key::F) {
                 match self.view_mode {
-                    ViewMode::Flat      => self.zoom_to_fit(),
+                    ViewMode::Flat => self.zoom_to_fit(),
                     ViewMode::Isometric => self.iso_fit(),
                 }
             }
 
             // Arrow-key panning
             let pan = (self.cell_size * 5.0).max(10.0);
-            if i.key_pressed(egui::Key::ArrowLeft)  { self.viewport_offset.x -= pan; }
-            if i.key_pressed(egui::Key::ArrowRight) { self.viewport_offset.x += pan; }
-            if i.key_pressed(egui::Key::ArrowUp)    { self.viewport_offset.y -= pan; }
-            if i.key_pressed(egui::Key::ArrowDown)  { self.viewport_offset.y += pan; }
+            if i.key_pressed(egui::Key::ArrowLeft) {
+                self.viewport_offset.x -= pan;
+            }
+            if i.key_pressed(egui::Key::ArrowRight) {
+                self.viewport_offset.x += pan;
+            }
+            if i.key_pressed(egui::Key::ArrowUp) {
+                self.viewport_offset.y -= pan;
+            }
+            if i.key_pressed(egui::Key::ArrowDown) {
+                self.viewport_offset.y += pan;
+            }
 
             // Help
             if i.key_pressed(egui::Key::H) || i.key_pressed(egui::Key::F1) {
@@ -842,10 +905,12 @@ impl LifeGridApp {
             // Toggle 3-D view
             if i.key_pressed(egui::Key::V) {
                 self.view_mode = match self.view_mode {
-                    ViewMode::Flat      => ViewMode::Isometric,
+                    ViewMode::Flat => ViewMode::Isometric,
                     ViewMode::Isometric => ViewMode::Flat,
                 };
-                if self.view_mode == ViewMode::Isometric { self.iso_fit(); }
+                if self.view_mode == ViewMode::Isometric {
+                    self.iso_fit();
+                }
             }
 
             // Selection shortcuts
@@ -853,10 +918,18 @@ impl LifeGridApp {
                 self.selection = None;
                 self.selection_anchor = None;
             }
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::C) { self.copy_selection(); }
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::X) { self.cut_selection(); }
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::V) { self.paste_clipboard(); }
-            if i.key_pressed(egui::Key::Delete)    { self.clear_selection_cells(); }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::C) {
+                self.copy_selection();
+            }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::X) {
+                self.cut_selection();
+            }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::V) {
+                self.paste_clipboard();
+            }
+            if i.key_pressed(egui::Key::Delete) {
+                self.clear_selection_cells();
+            }
         });
     }
 
@@ -873,9 +946,19 @@ impl LifeGridApp {
 
             // Play / Pause
             let play_label = if self.running { "Pause" } else { "Play" };
-            if ui.button(play_label).on_hover_text(if self.running { "Pause (Space)" } else { "Play (Space)" }).clicked() {
+            if ui
+                .button(play_label)
+                .on_hover_text(if self.running {
+                    "Pause (Space)"
+                } else {
+                    "Play (Space)"
+                })
+                .clicked()
+            {
                 self.running = !self.running;
-                if self.running { self.last_step = Instant::now(); }
+                if self.running {
+                    self.last_step = Instant::now();
+                }
             }
             // Step
             if ui.button("Step").on_hover_text("Step (S)").clicked() {
@@ -894,14 +977,24 @@ impl LifeGridApp {
             // Undo / Redo
             let can_undo = self.undo.can_undo();
             let can_redo = self.undo.can_redo();
-            if ui.add_enabled(can_undo, egui::Button::new("Undo")).on_hover_text("Undo (Ctrl+Z)").clicked() {
+            if ui
+                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .on_hover_text("Undo (Ctrl+Z)")
+                .clicked()
+            {
                 let cur = self.automaton.get_grid().cells.clone();
                 if let Some(prev) = self.undo.undo(cur) {
                     self.automaton.get_grid_mut().cells = prev;
-                    if self.generation > 0 { self.generation -= 1; }
+                    if self.generation > 0 {
+                        self.generation -= 1;
+                    }
                 }
             }
-            if ui.add_enabled(can_redo, egui::Button::new("Redo")).on_hover_text("Redo (Ctrl+Y)").clicked() {
+            if ui
+                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .on_hover_text("Redo (Ctrl+Y)")
+                .clicked()
+            {
                 let cur = self.automaton.get_grid().cells.clone();
                 if let Some(next) = self.undo.redo(cur) {
                     self.automaton.get_grid_mut().cells = next;
@@ -912,7 +1005,11 @@ impl LifeGridApp {
             ui.separator();
 
             // Run N steps
-            if ui.button("Run N…").on_hover_text("Run a fixed number of steps").clicked() {
+            if ui
+                .button("Run N…")
+                .on_hover_text("Run a fixed number of steps")
+                .clicked()
+            {
                 self.show_run_n_dialog = true;
             }
 
@@ -920,12 +1017,17 @@ impl LifeGridApp {
 
             // Theme toggle
             let theme_label = if self.dark_mode { "Light" } else { "Dark" };
-            if ui.button(theme_label).on_hover_text("Toggle dark/light theme").clicked() {
+            if ui
+                .button(theme_label)
+                .on_hover_text("Toggle dark/light theme")
+                .clicked()
+            {
                 self.dark_mode = !self.dark_mode;
             }
 
             let compact_active = self.compact_mode;
-            if ui.add(egui::SelectableLabel::new(compact_active, "Compact"))
+            if ui
+                .selectable_label(compact_active, "Compact")
                 .on_hover_text("Tighter spacing for smaller screens")
                 .clicked()
             {
@@ -935,7 +1037,11 @@ impl LifeGridApp {
             ui.separator();
 
             // Zoom to fit
-            if ui.button("Fit").on_hover_text("Zoom to fit grid (F)").clicked() {
+            if ui
+                .button("Fit")
+                .on_hover_text("Zoom to fit grid (F)")
+                .clicked()
+            {
                 self.zoom_to_fit();
             }
 
@@ -943,16 +1049,20 @@ impl LifeGridApp {
 
             // Tool mode
             let paint_active = self.tool_mode == ToolMode::Paint;
-            let sel_active   = self.tool_mode == ToolMode::Select;
-            if ui.add(egui::SelectableLabel::new(paint_active, "Paint"))
-                .on_hover_text("Paint tool — draw cells (default)").clicked()
+            let sel_active = self.tool_mode == ToolMode::Select;
+            if ui
+                .selectable_label(paint_active, "Paint")
+                .on_hover_text("Paint tool — draw cells (default)")
+                .clicked()
             {
                 self.tool_mode = ToolMode::Paint;
                 self.selection = None;
                 self.selection_anchor = None;
             }
-            if ui.add(egui::SelectableLabel::new(sel_active, "Select"))
-                .on_hover_text("Select tool — drag to select a region (copy/paste/clear)").clicked()
+            if ui
+                .selectable_label(sel_active, "Select")
+                .on_hover_text("Select tool — drag to select a region (copy/paste/clear)")
+                .clicked()
             {
                 self.tool_mode = ToolMode::Select;
             }
@@ -961,17 +1071,29 @@ impl LifeGridApp {
 
             // 3-D / isometric view toggle
             let iso_active = self.view_mode == ViewMode::Isometric;
-            if ui.add(egui::SelectableLabel::new(iso_active, "Iso 3D"))
-                .on_hover_text("Toggle isometric 3-D view (V)").clicked()
+            if ui
+                .selectable_label(iso_active, "Iso 3D")
+                .on_hover_text("Toggle isometric 3-D view (V)")
+                .clicked()
             {
-                self.view_mode = if iso_active { ViewMode::Flat } else { ViewMode::Isometric };
-                if self.view_mode == ViewMode::Isometric { self.iso_fit(); }
+                self.view_mode = if iso_active {
+                    ViewMode::Flat
+                } else {
+                    ViewMode::Isometric
+                };
+                if self.view_mode == ViewMode::Isometric {
+                    self.iso_fit();
+                }
             }
 
             ui.separator();
 
             // Help
-            if ui.button("Help").on_hover_text("Keyboard shortcuts (H / F1)").clicked() {
+            if ui
+                .button("Help")
+                .on_hover_text("Keyboard shortcuts (H / F1)")
+                .clicked()
+            {
                 self.show_help = !self.show_help;
             }
 
@@ -1056,17 +1178,36 @@ impl LifeGridApp {
                             ui.label(format!("{}×{}  at  ({}, {})", sw, sh, x0, y0));
                             ui.horizontal(|ui| {
                                 let w = (ui.available_width() - 12.0) / 3.0;
-                                if ui.add_sized([w, button_h], egui::Button::new("Copy")).on_hover_text("Ctrl+C").clicked() {
+                                if ui
+                                    .add_sized([w, button_h], egui::Button::new("Copy"))
+                                    .on_hover_text("Ctrl+C")
+                                    .clicked()
+                                {
                                     self.copy_selection();
                                 }
-                                if ui.add_sized([w, button_h], egui::Button::new("Cut")).on_hover_text("Ctrl+X").clicked() {
+                                if ui
+                                    .add_sized([w, button_h], egui::Button::new("Cut"))
+                                    .on_hover_text("Ctrl+X")
+                                    .clicked()
+                                {
                                     self.cut_selection();
                                 }
-                                if ui.add_sized([w, button_h], egui::Button::new("Clear")).on_hover_text("Delete").clicked() {
+                                if ui
+                                    .add_sized([w, button_h], egui::Button::new("Clear"))
+                                    .on_hover_text("Delete")
+                                    .clicked()
+                                {
                                     self.clear_selection_cells();
                                 }
                             });
-                            if ui.add_sized([ui.available_width(), button_h], egui::Button::new("Deselect")).on_hover_text("Escape").clicked() {
+                            if ui
+                                .add_sized(
+                                    [ui.available_width(), button_h],
+                                    egui::Button::new("Deselect"),
+                                )
+                                .on_hover_text("Escape")
+                                .clicked()
+                            {
                                 self.selection = None;
                             }
                         } else {
@@ -1075,7 +1216,14 @@ impl LifeGridApp {
                         if let Some((_, cw, ch)) = &self.clipboard {
                             ui.separator();
                             ui.label(format!("Clipboard: {}×{}", cw, ch));
-                            if ui.add_sized([ui.available_width(), button_h], egui::Button::new("Paste")).on_hover_text("Ctrl+V").clicked() {
+                            if ui
+                                .add_sized(
+                                    [ui.available_width(), button_h],
+                                    egui::Button::new("Paste"),
+                                )
+                                .on_hover_text("Ctrl+V")
+                                .clicked()
+                            {
                                 self.paste_clipboard();
                             }
                         }
@@ -1089,121 +1237,139 @@ impl LifeGridApp {
             egui::CollapsingHeader::new("Automaton")
                 .default_open(true)
                 .show(ui, |ui| {
-                // Mode
-                ui.label("Mode:");
-                let old_mode = self.selected_mode.clone();
-                egui::ComboBox::from_id_salt("mode_combo")
-                    .selected_text(&self.selected_mode)
-                    .width(ui.available_width() - 4.0)
-                    .show_ui(ui, |ui| {
-                        for &m in automata::ALL_MODES {
-                            ui.selectable_value(&mut self.selected_mode, m.to_owned(), m);
-                        }
-                    });
-                if self.selected_mode != old_mode {
-                    self.rebuild_automaton();
-                }
-
-                // Pattern
-                ui.label("Pattern:");
-                let patterns: Vec<&str> = self.automaton.available_patterns().to_vec();
-                let old_pat = self.selected_pattern.clone();
-                egui::ComboBox::from_id_salt("pattern_combo")
-                    .selected_text(&self.selected_pattern)
-                    .width(ui.available_width() - 4.0)
-                    .show_ui(ui, |ui| {
-                        for &p in &patterns {
-                            ui.selectable_value(&mut self.selected_pattern, p.to_owned(), p);
-                        }
-                    });
-                if self.selected_pattern != old_pat {
-                    self.do_reset();
-                    let pat = self.selected_pattern.clone();
-                    self.automaton.load_pattern(&pat);
-                }
-
-                // Boundary
-                ui.label("Boundary:");
-                let old_bnd = self.selected_boundary;
-                egui::ComboBox::from_id_salt("boundary_combo")
-                    .selected_text(self.selected_boundary.as_str())
-                    .width(ui.available_width() - 4.0)
-                    .show_ui(ui, |ui| {
-                        for &b in BoundaryMode::all() {
-                            ui.selectable_value(&mut self.selected_boundary, b, b.as_str());
-                        }
-                    });
-                if self.selected_boundary != old_bnd {
-                    self.automaton.set_boundary(self.selected_boundary);
-                }
-
-                // Custom rule editor
-                if self.selected_mode == "Custom Rules" {
-                    ui.label("Rule (B/S):");
-                    let old_rule = self.custom_rule_str.clone();
-                    ui.text_edit_singleline(&mut self.custom_rule_str);
-                    if self.custom_rule_str != old_rule {
-                        let (b, s) = LifeLike::parse_bs(&self.custom_rule_str);
-                        self.custom_birth = b;
-                        self.custom_survival = s;
+                    // Mode
+                    ui.label("Mode:");
+                    let old_mode = self.selected_mode.clone();
+                    egui::ComboBox::from_id_salt("mode_combo")
+                        .selected_text(&self.selected_mode)
+                        .width(ui.available_width() - 4.0)
+                        .show_ui(ui, |ui| {
+                            for &m in automata::ALL_MODES {
+                                ui.selectable_value(&mut self.selected_mode, m.to_owned(), m);
+                            }
+                        });
+                    if self.selected_mode != old_mode {
                         self.rebuild_automaton();
                     }
-                }
 
-                // Resize button
-                ui.add_space(4.0);
-                if ui.add_sized([ui.available_width(), button_h], egui::Button::new("Resize Grid...")).clicked() {
-                    let (gw, gh) = {
-                        let g = self.automaton.get_grid();
-                        (g.width, g.height)
-                    };
-                    self.resize_w_input = gw.to_string();
-                    self.resize_h_input = gh.to_string();
-                    self.show_resize_dialog = true;
-                }
-
-                // RLE import from clipboard
-                if ui.add_sized([ui.available_width(), button_h], egui::Button::new("Import RLE")).on_hover_text("Paste RLE pattern from clipboard").clicked() {
-                    match arboard::Clipboard::new()
-                        .and_then(|mut c| c.get_text())
-                    {
-                        Ok(text) => {
-                            let pts = parse_rle(&text);
-                            if pts.is_empty() {
-                                self.set_status("Clipboard: no valid RLE found");
-                            } else {
-                                let (gw, gh) = {
-                                    let g = self.automaton.get_grid();
-                                    (g.width as i32, g.height as i32)
-                                };
-                                let cx = gw / 2;
-                                let cy = gh / 2;
-                                self.push_undo();
-                                for (dx, dy) in pts {
-                                    let x = cx + dx;
-                                    let y = cy + dy;
-                                    if x >= 0 && x < gw && y >= 0 && y < gh {
-                                        self.automaton
-                                            .get_grid_mut()
-                                            .set(y as usize, x as usize, 1);
-                                    }
-                                }
-                                self.set_status("RLE pattern imported");
+                    // Pattern
+                    ui.label("Pattern:");
+                    let patterns: Vec<&str> = self.automaton.available_patterns().to_vec();
+                    let old_pat = self.selected_pattern.clone();
+                    egui::ComboBox::from_id_salt("pattern_combo")
+                        .selected_text(&self.selected_pattern)
+                        .width(ui.available_width() - 4.0)
+                        .show_ui(ui, |ui| {
+                            for &p in &patterns {
+                                ui.selectable_value(&mut self.selected_pattern, p.to_owned(), p);
                             }
-                        }
-                        Err(e) => self.set_status(format!("Clipboard error: {e}")),
+                        });
+                    if self.selected_pattern != old_pat {
+                        self.do_reset();
+                        let pat = self.selected_pattern.clone();
+                        self.automaton.load_pattern(&pat);
                     }
-                }
 
-                // RLE export to clipboard
-                if ui.add_sized([ui.available_width(), button_h], egui::Button::new("Copy RLE")).on_hover_text("Copy current grid as RLE to clipboard").clicked() {
-                    let rle = self.grid_to_rle();
-                    match arboard::Clipboard::new().and_then(|mut c| c.set_text(rle)) {
-                        Ok(()) => self.set_status("RLE copied to clipboard"),
-                        Err(e) => self.set_status(format!("Clipboard error: {e}")),
+                    // Boundary
+                    ui.label("Boundary:");
+                    let old_bnd = self.selected_boundary;
+                    egui::ComboBox::from_id_salt("boundary_combo")
+                        .selected_text(self.selected_boundary.as_str())
+                        .width(ui.available_width() - 4.0)
+                        .show_ui(ui, |ui| {
+                            for &b in BoundaryMode::all() {
+                                ui.selectable_value(&mut self.selected_boundary, b, b.as_str());
+                            }
+                        });
+                    if self.selected_boundary != old_bnd {
+                        self.automaton.set_boundary(self.selected_boundary);
                     }
-                }
-            });
+
+                    // Custom rule editor
+                    if self.selected_mode == "Custom Rules" {
+                        ui.label("Rule (B/S):");
+                        let old_rule = self.custom_rule_str.clone();
+                        ui.text_edit_singleline(&mut self.custom_rule_str);
+                        if self.custom_rule_str != old_rule {
+                            let (b, s) = LifeLike::parse_bs(&self.custom_rule_str);
+                            self.custom_birth = b;
+                            self.custom_survival = s;
+                            self.rebuild_automaton();
+                        }
+                    }
+
+                    // Resize button
+                    ui.add_space(4.0);
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), button_h],
+                            egui::Button::new("Resize Grid..."),
+                        )
+                        .clicked()
+                    {
+                        let (gw, gh) = {
+                            let g = self.automaton.get_grid();
+                            (g.width, g.height)
+                        };
+                        self.resize_w_input = gw.to_string();
+                        self.resize_h_input = gh.to_string();
+                        self.show_resize_dialog = true;
+                    }
+
+                    // RLE import from clipboard
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), button_h],
+                            egui::Button::new("Import RLE"),
+                        )
+                        .on_hover_text("Paste RLE pattern from clipboard")
+                        .clicked()
+                    {
+                        match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                            Ok(text) => {
+                                let pts = parse_rle(&text);
+                                if pts.is_empty() {
+                                    self.set_status("Clipboard: no valid RLE found");
+                                } else {
+                                    let (gw, gh) = {
+                                        let g = self.automaton.get_grid();
+                                        (g.width as i32, g.height as i32)
+                                    };
+                                    let cx = gw / 2;
+                                    let cy = gh / 2;
+                                    self.push_undo();
+                                    for (dx, dy) in pts {
+                                        let x = cx + dx;
+                                        let y = cy + dy;
+                                        if x >= 0 && x < gw && y >= 0 && y < gh {
+                                            self.automaton
+                                                .get_grid_mut()
+                                                .set(y as usize, x as usize, 1);
+                                        }
+                                    }
+                                    self.set_status("RLE pattern imported");
+                                }
+                            }
+                            Err(e) => self.set_status(format!("Clipboard error: {e}")),
+                        }
+                    }
+
+                    // RLE export to clipboard
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), button_h],
+                            egui::Button::new("Copy RLE"),
+                        )
+                        .on_hover_text("Copy current grid as RLE to clipboard")
+                        .clicked()
+                    {
+                        let rle = self.grid_to_rle();
+                        match arboard::Clipboard::new().and_then(|mut c| c.set_text(rle)) {
+                            Ok(()) => self.set_status("RLE copied to clipboard"),
+                            Err(e) => self.set_status(format!("Clipboard error: {e}")),
+                        }
+                    }
+                });
         });
 
         ui.add_space(4.0);
@@ -1213,40 +1379,45 @@ impl LifeGridApp {
             egui::CollapsingHeader::new("View")
                 .default_open(true)
                 .show(ui, |ui| {
-                ui.label(format!("Speed: {} steps/s", self.speed));
-                ui.add(egui::Slider::new(&mut self.speed, 1..=200).show_value(false));
+                    ui.label(format!("Speed: {} steps/s", self.speed));
+                    ui.add(egui::Slider::new(&mut self.speed, 1..=200).show_value(false));
 
-                ui.label(format!("Cell size: {}px", self.cell_size as u32));
-                ui.horizontal(|ui| {
-                    if ui.small_button("−").clicked() {
-                        self.cell_size = (self.cell_size - 1.0).max(1.0);
+                    ui.label(format!("Cell size: {}px", self.cell_size as u32));
+                    ui.horizontal(|ui| {
+                        if ui.small_button("−").clicked() {
+                            self.cell_size = (self.cell_size - 1.0).max(1.0);
+                        }
+                        ui.add(
+                            egui::Slider::new(&mut self.cell_size, 1.0..=64.0).show_value(false),
+                        );
+                        if ui.small_button("+").clicked() {
+                            self.cell_size = (self.cell_size + 1.0).min(64.0);
+                        }
+                    });
+
+                    ui.checkbox(&mut self.show_grid, "Grid lines (G)");
+                    ui.checkbox(&mut self.rounded_cells, "Rounded cells");
+                    ui.checkbox(&mut self.show_aging, "Cell aging overlay");
+
+                    if self.view_mode == ViewMode::Isometric {
+                        ui.add_space(4.0);
+                        ui.label(format!("Block height: {:.2}×", self.iso_height));
+                        ui.add(
+                            egui::Slider::new(&mut self.iso_height, 0.25..=4.0).show_value(false),
+                        );
                     }
-                    ui.add(
-                        egui::Slider::new(&mut self.cell_size, 1.0..=64.0).show_value(false),
-                    );
-                    if ui.small_button("+").clicked() {
-                        self.cell_size = (self.cell_size + 1.0).min(64.0);
-                    }
-                });
 
-                ui.checkbox(&mut self.show_grid, "Grid lines (G)");
-                ui.checkbox(&mut self.rounded_cells, "Rounded cells");
-                ui.checkbox(&mut self.show_aging, "Cell aging overlay");
-
-                if self.view_mode == ViewMode::Isometric {
                     ui.add_space(4.0);
-                    ui.label(format!("Block height: {:.2}×", self.iso_height));
+                    ui.label("Paint state:");
                     ui.add(
-                        egui::Slider::new(&mut self.iso_height, 0.25..=4.0).show_value(false),
+                        egui::Slider::new(&mut self.paint_state, 0..=8)
+                            .clamping(egui::SliderClamping::Always),
                     );
-                }
-
-                ui.add_space(4.0);
-                ui.label("Paint state:");
-                ui.add(egui::Slider::new(&mut self.paint_state, 0..=8).clamping(egui::SliderClamping::Always));
-                ui.label(egui::RichText::new("Left-click = paint   Right-click = erase")
-                    .small()
-                    .weak());
+                    ui.label(
+                        egui::RichText::new("Left-click = paint   Right-click = erase")
+                            .small()
+                            .weak(),
+                    );
                 });
         });
 
@@ -1257,54 +1428,51 @@ impl LifeGridApp {
             egui::CollapsingHeader::new("Statistics")
                 .default_open(true)
                 .show(ui, |ui| {
-                if self.pop_history.len() > 1 {
-                    let max_pop = self
-                        .pop_history
-                        .iter()
-                        .copied()
-                        .max()
-                        .unwrap_or(1)
-                        .max(1);
-                    let min_pop = self.pop_history.iter().copied().min().unwrap_or(0);
-                    let avg_pop = self.pop_history.iter().sum::<usize>()
-                        / self.pop_history.len();
+                    if self.pop_history.len() > 1 {
+                        let max_pop = self.pop_history.iter().copied().max().unwrap_or(1).max(1);
+                        let min_pop = self.pop_history.iter().copied().min().unwrap_or(0);
+                        let avg_pop =
+                            self.pop_history.iter().sum::<usize>() / self.pop_history.len();
 
-                    ui.label(format!("Peak: {}  Min: {}  Avg: {}", max_pop, min_pop, avg_pop));
+                        ui.label(format!(
+                            "Peak: {}  Min: {}  Avg: {}",
+                            max_pop, min_pop, avg_pop
+                        ));
 
-                    // Sparkline
-                    let graph_size = Vec2::new(ui.available_width(), 56.0);
-                    let (rect, _) = ui.allocate_exact_size(graph_size, Sense::hover());
-                    let painter = ui.painter_at(rect);
-                    let bg = if self.dark_mode {
-                        Color32::from_rgb(20, 20, 30)
+                        // Sparkline
+                        let graph_size = Vec2::new(ui.available_width(), 56.0);
+                        let (rect, _) = ui.allocate_exact_size(graph_size, Sense::hover());
+                        let painter = ui.painter_at(rect);
+                        let bg = if self.dark_mode {
+                            Color32::from_rgb(20, 20, 30)
+                        } else {
+                            Color32::from_gray(240)
+                        };
+                        painter.rect_filled(rect, CornerRadius::same(3), bg);
+                        let n = self.pop_history.len();
+                        let step = rect.width() / n.max(2) as f32;
+                        let accent = mode_accent_color(&self.selected_mode);
+                        let pts: Vec<egui::Pos2> = self
+                            .pop_history
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &p)| {
+                                egui::pos2(
+                                    rect.left() + i as f32 * step,
+                                    rect.bottom()
+                                        - (p as f32 / max_pop as f32) * (rect.height() - 4.0)
+                                        - 2.0,
+                                )
+                            })
+                            .collect();
+                        painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5_f32, accent)));
                     } else {
-                        Color32::from_gray(240)
-                    };
-                    painter.rect_filled(rect, CornerRadius::same(3), bg);
-                    let n = self.pop_history.len();
-                    let step = rect.width() / n.max(2) as f32;
-                    let accent = mode_accent_color(&self.selected_mode);
-                    let pts: Vec<egui::Pos2> = self
-                        .pop_history
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &p)| {
-                            egui::pos2(
-                                rect.left() + i as f32 * step,
-                                rect.bottom()
-                                    - (p as f32 / max_pop as f32) * (rect.height() - 4.0)
-                                    - 2.0,
-                            )
-                        })
-                        .collect();
-                    painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5_f32, accent)));
-                } else {
-                    ui.weak("Run the simulation to see statistics.");
-                }
+                        ui.weak("Run the simulation to see statistics.");
+                    }
 
-                if ui.small_button("Reset stats").clicked() {
-                    self.pop_history.clear();
-                }
+                    if ui.small_button("Reset stats").clicked() {
+                        self.pop_history.clear();
+                    }
                 });
         });
 
@@ -1315,81 +1483,94 @@ impl LifeGridApp {
             egui::CollapsingHeader::new("Export & State")
                 .default_open(false)
                 .show(ui, |ui| {
-                if ui.add_sized([ui.available_width(), button_h], egui::Button::new("Export PNG...")).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("PNG image", &["png"])
-                        .save_file()
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), button_h],
+                            egui::Button::new("Export PNG..."),
+                        )
+                        .clicked()
                     {
-                        let cs = (self.cell_size as u32).max(1);
-                        match export::export_png(self.automaton.get_grid(), cs, &path) {
-                            Ok(()) => self.set_status(format!("Saved {}", path.display())),
-                            Err(e) => self.set_status(format!("Export failed: {}", e)),
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("PNG image", &["png"])
+                            .save_file()
+                        {
+                            let cs = (self.cell_size as u32).max(1);
+                            match export::export_png(self.automaton.get_grid(), cs, &path) {
+                                Ok(()) => self.set_status(format!("Saved {}", path.display())),
+                                Err(e) => self.set_status(format!("Export failed: {}", e)),
+                            }
                         }
                     }
-                }
 
-                ui.separator();
+                    ui.separator();
 
-                // Save / load grid state
-                ui.horizontal(|ui| {
-                    let w = (ui.available_width() - 8.0) / 2.0;
-                    if ui.add_sized([w, button_h], egui::Button::new("Save State...")).on_hover_text("Save current grid to a .lifegrid file").clicked() {
-                        self.save_state();
-                    }
-                    if ui.add_sized([w, button_h], egui::Button::new("Load State...")).on_hover_text("Load a previously saved .lifegrid file").clicked() {
-                        self.load_state();
-                    }
-                });
+                    // Save / load grid state
+                    ui.horizontal(|ui| {
+                        let w = (ui.available_width() - 8.0) / 2.0;
+                        if ui
+                            .add_sized([w, button_h], egui::Button::new("Save State..."))
+                            .on_hover_text("Save current grid to a .lifegrid file")
+                            .clicked()
+                        {
+                            self.save_state();
+                        }
+                        if ui
+                            .add_sized([w, button_h], egui::Button::new("Load State..."))
+                            .on_hover_text("Load a previously saved .lifegrid file")
+                            .clicked()
+                        {
+                            self.load_state();
+                        }
+                    });
 
-                ui.separator();
+                    ui.separator();
 
-                ui.checkbox(&mut self.record_frames, "Record frames");
-                if self.record_frames {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} frames buffered (max 500)",
-                            self.frame_buffer.len()
-                        ))
-                        .small(),
-                    );
-                }
-                if ui
-                    .add_enabled(!self.frame_buffer.is_empty(), egui::Button::new("Export GIF..."))
-                    .clicked()
-                {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("GIF animation", &["gif"])
-                        .save_file()
-                    {
-                        let (gw, gh) = {
-                            let g = self.automaton.get_grid();
-                            (g.width, g.height)
-                        };
-                        let cs = (self.cell_size as u32).max(1).min(8);
-                        let delay = 1000 / self.speed.clamp(1, 30);
-                        match export::export_gif(
-                            &self.frame_buffer,
-                            gw,
-                            gh,
-                            cs,
-                            delay,
-                            &path,
-                        ) {
-                            Ok(()) => self.set_status(format!(
-                                "GIF saved ({} frames)",
+                    ui.checkbox(&mut self.record_frames, "Record frames");
+                    if self.record_frames {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} frames buffered (max 500)",
                                 self.frame_buffer.len()
-                            )),
-                            Err(e) => self.set_status(format!("GIF failed: {}", e)),
+                            ))
+                            .small(),
+                        );
+                    }
+                    if ui
+                        .add_enabled(
+                            !self.frame_buffer.is_empty(),
+                            egui::Button::new("Export GIF..."),
+                        )
+                        .clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("GIF animation", &["gif"])
+                            .save_file()
+                        {
+                            let (gw, gh) = {
+                                let g = self.automaton.get_grid();
+                                (g.width, g.height)
+                            };
+                            let cs = (self.cell_size as u32).clamp(1, 8);
+                            let delay = 1000 / self.speed.clamp(1, 30);
+                            match export::export_gif(&self.frame_buffer, gw, gh, cs, delay, &path) {
+                                Ok(()) => self.set_status(format!(
+                                    "GIF saved ({} frames)",
+                                    self.frame_buffer.len()
+                                )),
+                                Err(e) => self.set_status(format!("GIF failed: {}", e)),
+                            }
                         }
                     }
-                }
-                if ui
-                    .add_enabled(!self.frame_buffer.is_empty(), egui::Button::new("Clear frames"))
-                    .clicked()
-                {
-                    self.frame_buffer.clear();
-                    self.set_status("Frame buffer cleared");
-                }
+                    if ui
+                        .add_enabled(
+                            !self.frame_buffer.is_empty(),
+                            egui::Button::new("Clear frames"),
+                        )
+                        .clicked()
+                    {
+                        self.frame_buffer.clear();
+                        self.set_status("Frame buffer cleared");
+                    }
                 });
         });
     }
@@ -1401,8 +1582,7 @@ impl LifeGridApp {
         }
 
         let avail = ui.available_size();
-        let (rect, response) =
-            ui.allocate_exact_size(avail, Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(avail, Sense::click_and_drag());
 
         // Record canvas rect for zoom-to-fit (uses last frame's value, fine).
         self.canvas_rect = rect;
@@ -1477,7 +1657,10 @@ impl LifeGridApp {
                     base
                 };
                 let cell_rect = Rect::from_min_size(
-                    egui::pos2(rect.left() - vox + gx as f32 * cs, rect.top() - voy + gy as f32 * cs),
+                    egui::pos2(
+                        rect.left() - vox + gx as f32 * cs,
+                        rect.top() - voy + gy as f32 * cs,
+                    ),
                     Vec2::splat(cs),
                 );
                 painter.rect_filled(cell_rect, rounding, color);
@@ -1486,7 +1669,11 @@ impl LifeGridApp {
 
         // ── Grid lines ───────────────────────────────────────────────────────
         if show_grid && cs >= 4.0 {
-            let lc = if dark { Color32::from_gray(50) } else { Color32::from_gray(210) };
+            let lc = if dark {
+                Color32::from_gray(50)
+            } else {
+                Color32::from_gray(210)
+            };
             let stroke = egui::Stroke::new(0.5_f32, lc);
             for gx in start_gx..=end_gx {
                 let px = rect.left() - vox + gx as f32 * cs;
@@ -1529,24 +1716,28 @@ impl LifeGridApp {
                     60,
                 );
                 painter.rect_filled(hover_rect, rounding, hl);
-                response.clone().on_hover_text(format!(
-                    "({}, {})  state: {}",
-                    hx, hy, state
-                ));
+                response
+                    .clone()
+                    .on_hover_text(format!("({}, {})  state: {}", hx, hy, state));
             }
         }
 
         // ── Selection overlay ────────────────────────────────────────────────
         if let Some((x0, y0, x1, y1)) = self.selection {
             let sx = rect.left() - vox + x0 as f32 * cs;
-            let sy = rect.top()  - voy + y0 as f32 * cs;
+            let sy = rect.top() - voy + y0 as f32 * cs;
             let ex = rect.left() - vox + (x1 + 1) as f32 * cs;
-            let ey = rect.top()  - voy + (y1 + 1) as f32 * cs;
+            let ey = rect.top() - voy + (y1 + 1) as f32 * cs;
             let sel_rect = egui::Rect::from_min_max(egui::pos2(sx, sy), egui::pos2(ex, ey));
             let fill = Color32::from_rgba_premultiplied(100, 160, 255, 25);
             let stroke = egui::Stroke::new(1.5_f32, Color32::from_rgb(120, 180, 255));
             painter.rect_filled(sel_rect, CornerRadius::ZERO, fill);
-            painter.rect_stroke(sel_rect, CornerRadius::ZERO, stroke, egui::StrokeKind::Outside);
+            painter.rect_stroke(
+                sel_rect,
+                CornerRadius::ZERO,
+                stroke,
+                egui::StrokeKind::Outside,
+            );
         }
 
         // ── Left-click / drag: paint ─────────────────────────────────────────
@@ -1560,17 +1751,17 @@ impl LifeGridApp {
                             self.push_undo();
                             self.drag_undo_pushed = true;
                         }
-                        self.automaton
-                            .get_grid_mut()
-                            .set(gy_v as usize, gx as usize, self.paint_state);
+                        self.automaton.get_grid_mut().set(
+                            gy_v as usize,
+                            gx as usize,
+                            self.paint_state,
+                        );
                     }
                 }
             }
 
             // ── Right-click / drag: erase ─────────────────────────────────────
-            if response.dragged_by(egui::PointerButton::Secondary)
-                || response.secondary_clicked()
-            {
+            if response.dragged_by(egui::PointerButton::Secondary) || response.secondary_clicked() {
                 if let Some(pos) = response.interact_pointer_pos() {
                     let gx = ((pos.x - rect.left() + vox) / cs) as i64;
                     let gy_v = ((pos.y - rect.top() + voy) / cs) as i64;
@@ -1609,9 +1800,13 @@ impl LifeGridApp {
                 self.selection_anchor = None;
             }
             // Single click without drag clears selection.
-            if response.clicked() { self.selection = None; }
+            if response.clicked() {
+                self.selection = None;
+            }
             // Right-click also clears selection.
-            if response.secondary_clicked() { self.selection = None; }
+            if response.secondary_clicked() {
+                self.selection = None;
+            }
         }
     }
 
@@ -1637,9 +1832,9 @@ impl LifeGridApp {
             self.iso_offset += response.drag_delta();
         }
 
-        let cs    = self.cell_size;
+        let cs = self.cell_size;
         let iso_h = self.iso_height;
-        let dark  = self.dark_mode;
+        let dark = self.dark_mode;
 
         let (gw, gh, cells_snapshot, age_snapshot) = {
             let g = self.automaton.get_grid();
@@ -1648,8 +1843,8 @@ impl LifeGridApp {
 
         // Isometric projection: world (wx, wy, wz) → screen.
         // Moving +wx → screen right+down; +wy → screen left+down; +wz → screen up.
-        let base_x = rect.center().x + self.iso_offset.x
-            - (gw as f32 / 2.0 - gh as f32 / 2.0) * cs * 0.5;
+        let base_x =
+            rect.center().x + self.iso_offset.x - (gw as f32 / 2.0 - gh as f32 / 2.0) * cs * 0.5;
         let base_y = rect.min.y + rect.height() * 0.38 + self.iso_offset.y
             - (gw as f32 / 2.0 + gh as f32 / 2.0) * cs * 0.25;
 
@@ -1676,15 +1871,19 @@ impl LifeGridApp {
 
         // Ground-grid lines
         if self.show_grid && cs >= 3.0 {
-            let lc = if dark { Color32::from_gray(38) } else { Color32::from_gray(215) };
+            let lc = if dark {
+                Color32::from_gray(38)
+            } else {
+                Color32::from_gray(215)
+            };
             let stroke = egui::Stroke::new(0.5_f32, lc);
             for gx in 0..=gw {
-                let p1 = ipt(gx as f32, 0.0,      0.0);
+                let p1 = ipt(gx as f32, 0.0, 0.0);
                 let p2 = ipt(gx as f32, gh as f32, 0.0);
                 painter.line_segment([p1, p2], stroke);
             }
             for gy in 0..=gh {
-                let p1 = ipt(0.0,      gy as f32, 0.0);
+                let p1 = ipt(0.0, gy as f32, 0.0);
                 let p2 = ipt(gw as f32, gy as f32, 0.0);
                 painter.line_segment([p1, p2], stroke);
             }
@@ -1712,22 +1911,34 @@ impl LifeGridApp {
 
             // Right face (x+1 side — lower right of block)
             painter.add(egui::Shape::convex_polygon(
-                vec![ipt(x+1.0, y,     h), ipt(x+1.0, y+1.0, h),
-                     ipt(x+1.0, y+1.0, 0.0), ipt(x+1.0, y,   0.0)],
+                vec![
+                    ipt(x + 1.0, y, h),
+                    ipt(x + 1.0, y + 1.0, h),
+                    ipt(x + 1.0, y + 1.0, 0.0),
+                    ipt(x + 1.0, y, 0.0),
+                ],
                 shade(base_c, 0.52),
                 egui::Stroke::NONE,
             ));
             // Left face (y+1 side — lower left of block)
             painter.add(egui::Shape::convex_polygon(
-                vec![ipt(x,     y+1.0, h), ipt(x+1.0, y+1.0, h),
-                     ipt(x+1.0, y+1.0, 0.0), ipt(x,   y+1.0, 0.0)],
+                vec![
+                    ipt(x, y + 1.0, h),
+                    ipt(x + 1.0, y + 1.0, h),
+                    ipt(x + 1.0, y + 1.0, 0.0),
+                    ipt(x, y + 1.0, 0.0),
+                ],
                 shade(base_c, 0.72),
                 egui::Stroke::NONE,
             ));
             // Top face
             painter.add(egui::Shape::convex_polygon(
-                vec![ipt(x, y, h), ipt(x+1.0, y, h),
-                     ipt(x+1.0, y+1.0, h), ipt(x, y+1.0, h)],
+                vec![
+                    ipt(x, y, h),
+                    ipt(x + 1.0, y, h),
+                    ipt(x + 1.0, y + 1.0, h),
+                    ipt(x, y + 1.0, h),
+                ],
                 base_c,
                 egui::Stroke::NONE,
             ));
@@ -1735,14 +1946,19 @@ impl LifeGridApp {
 
         // Selection overlay (flat diamond outline on ground plane)
         if let Some((x0, y0, x1, y1)) = self.selection {
-            let x0f = x0 as f32; let y0f = y0 as f32;
-            let x1f = (x1 + 1) as f32; let y1f = (y1 + 1) as f32;
+            let x0f = x0 as f32;
+            let y0f = y0 as f32;
+            let x1f = (x1 + 1) as f32;
+            let y1f = (y1 + 1) as f32;
             let sel_pts = vec![
-                ipt(x0f, y0f, 0.0), ipt(x1f, y0f, 0.0),
-                ipt(x1f, y1f, 0.0), ipt(x0f, y1f, 0.0),
+                ipt(x0f, y0f, 0.0),
+                ipt(x1f, y0f, 0.0),
+                ipt(x1f, y1f, 0.0),
+                ipt(x0f, y1f, 0.0),
             ];
             painter.add(egui::Shape::closed_line(
-                sel_pts, egui::Stroke::new(2.0_f32, Color32::from_rgb(120, 180, 255)),
+                sel_pts,
+                egui::Stroke::new(2.0_f32, Color32::from_rgb(120, 180, 255)),
             ));
         }
 
@@ -1750,7 +1966,10 @@ impl LifeGridApp {
         let screen_to_grid = |pos: egui::Pos2| -> (i64, i64) {
             let dx = (pos.x - base_x) / (cs * 0.5);
             let dy = (pos.y - base_y) / (cs * 0.25);
-            (((dx + dy) / 2.0).floor() as i64, ((dy - dx) / 2.0).floor() as i64)
+            (
+                ((dx + dy) / 2.0).floor() as i64,
+                ((dy - dx) / 2.0).floor() as i64,
+            )
         };
 
         let accent = mode_accent_color(&self.selected_mode);
@@ -1758,13 +1977,20 @@ impl LifeGridApp {
             let (hx, hy) = screen_to_grid(cursor);
             if hx >= 0 && hx < gw as i64 && hy >= 0 && hy < gh as i64 {
                 let state = cells_snapshot[hy as usize * gw + hx as usize];
-                let hxf = hx as f32; let hyf = hy as f32;
+                let hxf = hx as f32;
+                let hyf = hy as f32;
                 painter.add(egui::Shape::closed_line(
-                    vec![ipt(hxf, hyf, 0.0), ipt(hxf+1.0, hyf, 0.0),
-                         ipt(hxf+1.0, hyf+1.0, 0.0), ipt(hxf, hyf+1.0, 0.0)],
+                    vec![
+                        ipt(hxf, hyf, 0.0),
+                        ipt(hxf + 1.0, hyf, 0.0),
+                        ipt(hxf + 1.0, hyf + 1.0, 0.0),
+                        ipt(hxf, hyf + 1.0, 0.0),
+                    ],
                     egui::Stroke::new(1.5_f32, accent),
                 ));
-                response.clone().on_hover_text(format!("({}, {})  state: {}", hx, hy, state));
+                response
+                    .clone()
+                    .on_hover_text(format!("({}, {})  state: {}", hx, hy, state));
             }
         }
 
@@ -1774,8 +2000,15 @@ impl LifeGridApp {
                 if let Some(pos) = response.interact_pointer_pos() {
                     let (gx, gy) = screen_to_grid(pos);
                     if gx >= 0 && gx < gw as i64 && gy >= 0 && gy < gh as i64 {
-                        if !self.drag_undo_pushed { self.push_undo(); self.drag_undo_pushed = true; }
-                        self.automaton.get_grid_mut().set(gy as usize, gx as usize, self.paint_state);
+                        if !self.drag_undo_pushed {
+                            self.push_undo();
+                            self.drag_undo_pushed = true;
+                        }
+                        self.automaton.get_grid_mut().set(
+                            gy as usize,
+                            gx as usize,
+                            self.paint_state,
+                        );
                     }
                 }
             }
@@ -1783,12 +2016,19 @@ impl LifeGridApp {
                 if let Some(pos) = response.interact_pointer_pos() {
                     let (gx, gy) = screen_to_grid(pos);
                     if gx >= 0 && gx < gw as i64 && gy >= 0 && gy < gh as i64 {
-                        if !self.drag_undo_pushed { self.push_undo(); self.drag_undo_pushed = true; }
-                        self.automaton.get_grid_mut().set(gy as usize, gx as usize, 0);
+                        if !self.drag_undo_pushed {
+                            self.push_undo();
+                            self.drag_undo_pushed = true;
+                        }
+                        self.automaton
+                            .get_grid_mut()
+                            .set(gy as usize, gx as usize, 0);
                     }
                 }
             }
-            if !response.dragged() { self.drag_undo_pushed = false; }
+            if !response.dragged() {
+                self.drag_undo_pushed = false;
+            }
         }
 
         // Select tool
@@ -1803,8 +2043,12 @@ impl LifeGridApp {
                     self.selection = Some((ax.min(gx), ay.min(gy), ax.max(gx), ay.max(gy)));
                 }
             }
-            if !response.dragged_by(egui::PointerButton::Primary) { self.selection_anchor = None; }
-            if response.clicked() { self.selection = None; }
+            if !response.dragged_by(egui::PointerButton::Primary) {
+                self.selection_anchor = None;
+            }
+            if response.clicked() {
+                self.selection = None;
+            }
         }
     }
 
@@ -1863,8 +2107,18 @@ impl LifeGridApp {
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Resize").clicked() {
-                        let w = self.resize_w_input.trim().parse::<usize>().unwrap_or(100).clamp(10, 1000);
-                        let h = self.resize_h_input.trim().parse::<usize>().unwrap_or(100).clamp(10, 1000);
+                        let w = self
+                            .resize_w_input
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap_or(100)
+                            .clamp(10, 1000);
+                        let h = self
+                            .resize_h_input
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap_or(100)
+                            .clamp(10, 1000);
                         let mut new_auto = Self::make_auto(
                             &self.selected_mode,
                             w,
@@ -1902,8 +2156,7 @@ impl LifeGridApp {
 // ---------------------------------------------------------------------------
 
 impl eframe::App for LifeGridApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Apply theme
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_theme(ctx);
 
         // FPS tracking (exponential moving average)
@@ -1914,7 +2167,6 @@ impl eframe::App for LifeGridApp {
         }
         self.last_frame_time = now;
 
-        // Keyboard shortcuts
         self.handle_keyboard(ctx);
 
         // Simulation tick
@@ -1927,11 +2179,15 @@ impl eframe::App for LifeGridApp {
             }
             ctx.request_repaint_after(step_dur);
         }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
 
         // Modal dialogs (rendered above all panels)
-        self.ui_run_n_dialog(ctx);
-        self.ui_resize_dialog(ctx);
-        self.ui_help_modal(ctx);
+        self.ui_run_n_dialog(&ctx);
+        self.ui_resize_dialog(&ctx);
+        self.ui_help_modal(&ctx);
 
         let bar_fill = if self.dark_mode {
             Color32::from_rgb(24, 27, 34)
@@ -1955,34 +2211,32 @@ impl eframe::App for LifeGridApp {
             .inner_margin(bar_margin);
 
         // Toolbar
-        egui::TopBottomPanel::top("toolbar")
-            .frame(bar_frame)
-            .show(ctx, |ui| {
-                self.ui_toolbar(ui);
-            });
+        egui::Panel::top("toolbar").frame(bar_frame).show(ui, |ui| {
+            self.ui_toolbar(ui);
+        });
 
         // Status bar
-        egui::TopBottomPanel::bottom("statusbar")
+        egui::Panel::bottom("statusbar")
             .frame(bar_frame)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 self.ui_statusbar(ui);
             });
 
         // Controls side panel
         let panel_min_width = if self.compact_mode { 160.0 } else { 180.0 };
         let panel_default_width = if self.compact_mode { 188.0 } else { 220.0 };
-        egui::SidePanel::left("controls")
+        egui::Panel::left("controls")
             .resizable(true)
-            .min_width(panel_min_width)
-            .default_width(panel_default_width)
-            .show(ctx, |ui| {
+            .min_size(panel_min_width)
+            .default_size(panel_default_width)
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     self.ui_controls(ui);
                 });
             });
 
         // Canvas
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             self.ui_canvas(ui);
         });
     }

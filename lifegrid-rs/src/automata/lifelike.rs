@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -99,9 +99,9 @@ impl Automaton for LifeLike {
 
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
-            *cell = u8::from(rng.gen::<f32>() < 0.15);
+            *cell = u8::from(rng.random::<f32>() < 0.15);
         }
     }
 

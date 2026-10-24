@@ -1,5 +1,5 @@
-use image::{ImageBuffer, Rgb, RgbaImage, Rgba, Frame, Delay};
 use image::codecs::gif::{GifEncoder, Repeat};
+use image::{Delay, Frame, ImageBuffer, Rgb, Rgba, RgbaImage};
 
 use crate::core::Grid;
 
@@ -64,7 +64,9 @@ pub fn export_gif(
     let file = File::create(path).map_err(|e| e.to_string())?;
     let writer = BufWriter::new(file);
     let mut encoder = GifEncoder::new_with_speed(writer, 10);
-    encoder.set_repeat(Repeat::Infinite).map_err(|e| e.to_string())?;
+    encoder
+        .set_repeat(Repeat::Infinite)
+        .map_err(|e| e.to_string())?;
 
     let w = (grid_w as u32) * cell_size;
     let h = (grid_h as u32) * cell_size;
@@ -91,4 +93,3 @@ pub fn export_gif(
     }
     Ok(())
 }
-

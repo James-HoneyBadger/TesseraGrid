@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -27,11 +27,13 @@ impl HexagonalLife {
         // Six hex neighbours for odd-r offset layout.
         // Even rows: left, right, up-left, up, down-left, down.
         // Odd rows:  left, right, up, up-right, down, down-right.
-        let (offsets_even, offsets_odd): (&[(i32,i32)], &[(i32,i32)]) = (
-            &[(-1,0),(1,0),(-1,-1),(0,-1),(-1,1),(0,1)],
-            &[(-1,0),(1,0),(0,-1),(1,-1),(0,1),(1,1)],
-        );
-        let offsets = if y % 2 == 0 { offsets_even } else { offsets_odd };
+        const OFFSETS_EVEN: &[(i32, i32)] = &[(-1, 0), (1, 0), (-1, -1), (0, -1), (-1, 1), (0, 1)];
+        const OFFSETS_ODD: &[(i32, i32)] = &[(-1, 0), (1, 0), (0, -1), (1, -1), (0, 1), (1, 1)];
+        let offsets = if y.is_multiple_of(2) {
+            OFFSETS_EVEN
+        } else {
+            OFFSETS_ODD
+        };
 
         let mut count = 0u8;
         for &(dx, dy) in offsets {
@@ -88,9 +90,9 @@ impl Automaton for HexagonalLife {
 
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
-            *cell = u8::from(rng.gen::<f32>() < 0.15);
+            *cell = u8::from(rng.random::<f32>() < 0.15);
         }
     }
 

@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 use crate::patterns;
@@ -60,9 +60,9 @@ impl Automaton for ConwayLife {
         let w = self.grid.width;
         let h = self.grid.height;
         if pattern == "Random Soup" {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             for cell in self.grid.cells.iter_mut() {
-                *cell = u8::from(rng.gen::<f32>() < 0.15);
+                *cell = u8::from(rng.random::<f32>() < 0.15);
             }
             return;
         }

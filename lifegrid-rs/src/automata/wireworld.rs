@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::core::{BoundaryMode, Grid};
 
@@ -34,7 +34,11 @@ impl Automaton for Wireworld {
                 2 => 3,
                 3 => {
                     let hn = head_neighbors[i];
-                    if hn == 1 || hn == 2 { 1 } else { 3 }
+                    if hn == 1 || hn == 2 {
+                        1
+                    } else {
+                        3
+                    }
                 }
                 _ => 0,
             };
@@ -60,10 +64,16 @@ impl Automaton for Wireworld {
 
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
-            let r: f32 = rng.gen();
-            *cell = if r < 0.02 { 1 } else if r < 0.12 { 3 } else { 0 };
+            let r: f32 = rng.random();
+            *cell = if r < 0.02 {
+                1
+            } else if r < 0.12 {
+                3
+            } else {
+                0
+            };
         }
     }
 

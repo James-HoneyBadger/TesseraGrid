@@ -1,6 +1,0 @@
-[flake8]
-extend-ignore = E203
-max-line-length = 79
-per-file-ignores =
-    src/gui/app.py: E203, E501
-    src/gui/state.py: E203
