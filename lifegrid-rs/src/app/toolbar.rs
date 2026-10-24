@@ -102,7 +102,17 @@ impl LifeGridApp {
                 ui.checkbox(&mut self.rounded_cells, "Rounded cells");
                 ui.checkbox(&mut self.show_aging, "Cell aging overlay");
                 ui.checkbox(&mut self.compact_mode, "Compact spacing");
-                ui.checkbox(&mut self.dark_mode, "Dark theme");
+                ui.menu_button("Theme", |ui| {
+                    for &theme in Theme::all() {
+                        if ui
+                            .selectable_label(self.theme == theme, theme.name())
+                            .clicked()
+                        {
+                            self.theme = theme;
+                            ui.close();
+                        }
+                    }
+                });
             });
 
             ui.menu_button("Help", |ui| {
@@ -124,7 +134,7 @@ impl LifeGridApp {
 
     pub(super) fn ui_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            let accent = mode_accent_color(&self.selected_mode);
+            let accent = self.theme.accent(&self.selected_mode);
 
             ui.label(
                 egui::RichText::new("LifeGrid")

@@ -62,7 +62,7 @@ impl LifeGridApp {
         }
 
         let cs = self.cell_size;
-        let dark = self.dark_mode;
+        let colors = self.theme.colors();
         let show_grid = self.show_grid;
         let show_aging = self.show_aging;
         let rounding = if self.rounded_cells {
@@ -120,7 +120,7 @@ impl LifeGridApp {
         let painter = ui.painter_at(rect);
 
         // ── Background ───────────────────────────────────────────────────────
-        let bg = cell_color(0, dark);
+        let bg = colors.background();
         painter.rect_filled(rect, CornerRadius::ZERO, bg);
 
         // ── Cells ────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ impl LifeGridApp {
                 if state == 0 {
                     continue;
                 }
-                let base = cell_color(state, dark);
+                let base = colors.cell(state);
                 let color = if show_aging && !age_snapshot.is_empty() {
                     aging_color(base, age_snapshot[gy * gw + gx])
                 } else {
@@ -149,11 +149,7 @@ impl LifeGridApp {
 
         // ── Grid lines (clipped to the grid, not the whole viewport) ─────────
         if show_grid && cs >= 4.0 {
-            let lc = if dark {
-                Color32::from_gray(50)
-            } else {
-                Color32::from_gray(210)
-            };
+            let lc = colors.grid;
             let stroke = egui::Stroke::new(0.5_f32, lc);
             let grid_left = rect.left() - vox;
             let grid_top = rect.top() - voy;
@@ -186,7 +182,7 @@ impl LifeGridApp {
         }
 
         // ── Hover highlight ──────────────────────────────────────────────────
-        let accent = mode_accent_color(&self.selected_mode);
+        let accent = self.theme.accent(&self.selected_mode);
         if let Some(cursor) = response.hover_pos() {
             let hx = ((cursor.x - rect.left() + vox) / cs) as i64;
             let hy = ((cursor.y - rect.top() + voy) / cs) as i64;
@@ -319,7 +315,7 @@ impl LifeGridApp {
 
         let cs = self.cell_size;
         let iso_h = self.iso_height;
-        let dark = self.dark_mode;
+        let colors = self.theme.colors();
 
         let (gw, gh, cells_snapshot, age_snapshot) = self.sim.render_snapshot();
         let paint_state = self.paint_state.min(self.sim.max_state());
@@ -350,15 +346,11 @@ impl LifeGridApp {
         let painter = ui.painter_at(rect);
 
         // Background
-        painter.rect_filled(rect, CornerRadius::ZERO, cell_color(0, dark));
+        painter.rect_filled(rect, CornerRadius::ZERO, colors.background());
 
         // Ground-grid lines
         if self.show_grid && cs >= 3.0 {
-            let lc = if dark {
-                Color32::from_gray(38)
-            } else {
-                Color32::from_gray(215)
-            };
+            let lc = colors.grid;
             let stroke = egui::Stroke::new(0.5_f32, lc);
             for gx in 0..=gw {
                 let p1 = ipt(gx as f32, 0.0, 0.0);
@@ -387,9 +379,9 @@ impl LifeGridApp {
             let h = *state as f32;
 
             let base_c = if self.show_aging && age_snapshot.len() > gy * gw + gx {
-                aging_color(cell_color(*state, dark), age_snapshot[gy * gw + gx])
+                aging_color(colors.cell(*state), age_snapshot[gy * gw + gx])
             } else {
-                cell_color(*state, dark)
+                colors.cell(*state)
             };
 
             // Right face (x+1 side — lower right of block)
@@ -455,7 +447,7 @@ impl LifeGridApp {
             )
         };
 
-        let accent = mode_accent_color(&self.selected_mode);
+        let accent = self.theme.accent(&self.selected_mode);
         if let Some(cursor) = response.hover_pos() {
             let (hx, hy) = screen_to_grid(cursor);
             if hx >= 0 && hx < gw as i64 && hy >= 0 && hy < gh as i64 {

@@ -2,8 +2,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::theme::Theme;
+
 /// Current config schema version. Bump when a migration is required.
-pub const CONFIG_VERSION: u32 = 1;
+///
+/// v2 added the `theme` field; `dark_mode` is kept for older builds.
+pub const CONFIG_VERSION: u32 = 2;
 
 /// Persistent application configuration (serialised to JSON).
 ///
@@ -22,8 +26,13 @@ pub struct AppConfig {
     pub boundary: String,
     pub custom_birth: Vec<u8>,
     pub custom_survival: Vec<u8>,
+    /// Legacy boolean theme flag, kept so older builds and configs interoperate.
     #[serde(default = "default_true")]
     pub dark_mode: bool,
+    /// Theme name (see `Theme::all`). Empty in pre-v2 configs and resolved from
+    /// `dark_mode` during sanitisation.
+    #[serde(default)]
+    pub theme: String,
     #[serde(default = "default_panel_width")]
     pub panel_width: f32,
     #[serde(default)]
@@ -84,6 +93,7 @@ impl Default for AppConfig {
             custom_birth: vec![3],
             custom_survival: vec![2, 3],
             dark_mode: true,
+            theme: "Dark".to_owned(),
             panel_width: 220.0,
             rounded_cells: false,
             paint_state: 1,
@@ -134,6 +144,15 @@ impl AppConfig {
         self.paint_state = self.paint_state.clamp(1, 24);
         self.brush_size = self.brush_size.clamp(1, 8);
         self.iso_height = self.iso_height.clamp(0.25, 4.0);
+
+        let theme = Theme::from_name(&self.theme).unwrap_or(if self.dark_mode {
+            Theme::Dark
+        } else {
+            Theme::Light
+        });
+        self.theme = theme.name().to_owned();
+        self.dark_mode = theme.is_dark();
+
         self.config_version = CONFIG_VERSION;
     }
 
@@ -196,6 +215,34 @@ mod tests {
         assert_eq!(cfg.brush_size, 1);
         assert_eq!(cfg.view_mode, "Flat");
         assert!(cfg.dark_mode);
+        assert!(cfg.theme.is_empty(), "old configs omit the theme");
+    }
+
+    #[test]
+    fn theme_migrates_from_legacy_dark_mode() {
+        let mut cfg: AppConfig = serde_json::from_str(
+            r#"{"grid_width":10,"grid_height":10,"cell_size":4.0,"speed":5,"show_grid":true,"automaton_mode":"High Life","pattern":"Random Soup","boundary":"Wrap","custom_birth":[3],"custom_survival":[2,3],"dark_mode":false}"#,
+        )
+        .expect("deserialize");
+        cfg.sanitize();
+        assert_eq!(cfg.theme, "Light");
+        assert!(!cfg.dark_mode);
+    }
+
+    #[test]
+    fn explicit_theme_wins_and_is_normalised() {
+        let mut cfg = AppConfig {
+            theme: "  nord ".to_owned(),
+            dark_mode: false,
+            ..AppConfig::default()
+        };
+        cfg.sanitize();
+        assert_eq!(cfg.theme, "Nord");
+        assert!(cfg.dark_mode);
+
+        cfg.theme = "not-a-theme".to_owned();
+        cfg.sanitize();
+        assert_eq!(cfg.theme, "Dark", "invalid names fall back to dark_mode");
     }
 
     #[test]

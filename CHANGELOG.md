@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [5.2.0] — 2026-10-24
+
+### Added
+- Eight color themes: **Dark**, **Light**, **Nord**, **Solarized Dark**,
+  **Gruvbox**, **Dracula**, **High Contrast**, and **Paper**. Choose them from
+  the View menu or the sidebar, or press `T` to cycle.
+- Each theme defines its own canvas palette, grid line colour, panel/card
+  colours, and status colours; light themes automatically darken mode accents
+  for readable text.
+- The pattern gallery previews and selection overlays follow the active theme.
+- The theme is persisted in the config (`theme`, schema v2) and migrates from
+  the legacy `dark_mode` flag; `dark_mode` is still written for older builds.
+
 ## [5.1.0] — 2026-10-24
 
 ### Added

@@ -6,7 +6,9 @@ mod theme;
 mod toolbar;
 
 use std::time::{Duration, Instant};
-pub(crate) use theme::{aging_color, cell_color, mode_accent_color};
+
+pub(crate) use crate::theme::aging_color;
+use crate::theme::Theme;
 
 use egui::{Color32, CornerRadius, Rect, Sense, Vec2};
 
@@ -28,6 +30,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("R", "Reset to the selected pattern"),
     ("N", "Randomize with the current seed"),
     ("G", "Toggle grid lines"),
+    ("T", "Cycle color theme"),
     ("F  /  Ctrl+0", "Zoom to fit"),
     ("V", "Toggle isometric 3-D view"),
     ("+  /  −", "Zoom in / out"),
@@ -99,7 +102,7 @@ pub struct LifeGridApp {
     speed: u32,
     cell_size: f32,
     show_grid: bool,
-    dark_mode: bool,
+    theme: Theme,
     rounded_cells: bool,
     compact_mode: bool,
 
@@ -168,7 +171,7 @@ pub struct LifeGridApp {
 
     // ── Persisted layout ─────────────────────────────────────────────────────
     panel_width: f32,
-    theme_key: Option<(bool, bool, Color32)>,
+    theme_key: Option<(Theme, bool, Color32)>,
 }
 
 impl LifeGridApp {
@@ -214,7 +217,11 @@ impl LifeGridApp {
             speed: cfg.speed.clamp(1, 200),
             cell_size: cfg.cell_size.clamp(1.0, 64.0),
             show_grid: cfg.show_grid,
-            dark_mode: cfg.dark_mode,
+            theme: Theme::from_name(&cfg.theme).unwrap_or(if cfg.dark_mode {
+                Theme::Dark
+            } else {
+                Theme::Light
+            }),
             rounded_cells: cfg.rounded_cells,
             compact_mode: cfg.compact_mode,
 
@@ -654,7 +661,8 @@ impl LifeGridApp {
             boundary: self.selected_boundary.as_str().to_owned(),
             custom_birth: self.custom_birth.clone(),
             custom_survival: self.custom_survival.clone(),
-            dark_mode: self.dark_mode,
+            theme: self.theme.name().to_owned(),
+            dark_mode: self.theme.is_dark(),
             panel_width: self.panel_width,
             rounded_cells: self.rounded_cells,
             paint_state: self.paint_state,
@@ -699,6 +707,9 @@ impl LifeGridApp {
             }
             if i.key_pressed(egui::Key::N) {
                 self.randomize();
+            }
+            if i.key_pressed(egui::Key::T) {
+                self.theme = self.theme.next();
             }
             if i.key_pressed(egui::Key::R) {
                 self.do_reset();
@@ -871,16 +882,9 @@ impl eframe::App for LifeGridApp {
         self.ui_gallery(&ctx);
         self.ui_about(&ctx);
 
-        let bar_fill = if self.dark_mode {
-            Color32::from_rgb(24, 27, 34)
-        } else {
-            Color32::from_rgb(246, 248, 252)
-        };
-        let bar_stroke = if self.dark_mode {
-            Color32::from_rgb(52, 58, 72)
-        } else {
-            Color32::from_rgb(208, 216, 228)
-        };
+        let colors = self.theme.colors();
+        let bar_fill = colors.card;
+        let bar_stroke = colors.stroke;
         let bar_margin = if self.compact_mode {
             egui::Margin::symmetric(10, 6)
         } else {

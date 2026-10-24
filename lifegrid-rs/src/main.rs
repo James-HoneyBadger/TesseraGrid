@@ -6,6 +6,7 @@ mod export;
 mod patterns;
 mod rle;
 mod sim;
+mod theme;
 
 use clap::Parser;
 

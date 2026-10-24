@@ -1,17 +1,18 @@
 use super::*;
 
 /// Draw a 36×36 preview of a Conway pattern (or a placeholder).
-fn pattern_thumbnail(ui: &mut egui::Ui, name: &str) {
+fn pattern_thumbnail(ui: &mut egui::Ui, name: &str, theme: Theme) {
+    let colors = theme.colors();
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, CornerRadius::same(4), Color32::from_gray(40));
+    painter.rect_filled(rect, CornerRadius::same(4), colors.background());
     let Some(points) = patterns::conway_pattern_points(name) else {
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
             "·",
             egui::FontId::proportional(16.0),
-            Color32::from_gray(140),
+            colors.cell(8),
         );
         return;
     };
@@ -27,7 +28,7 @@ fn pattern_thumbnail(ui: &mut egui::Ui, name: &str) {
         painter.rect_filled(
             Rect::from_min_size(egui::pos2(x, y), Vec2::splat(cell.max(1.5))),
             CornerRadius::ZERO,
-            Color32::from_rgb(220, 220, 255),
+            colors.cell(1),
         );
     }
 }
@@ -105,7 +106,7 @@ impl LifeGridApp {
                                     {
                                         continue;
                                     }
-                                    pattern_thumbnail(ui, name);
+                                    pattern_thumbnail(ui, name, self.theme);
                                     let selected = name == self.selected_pattern;
                                     if ui.selectable_label(selected, name).clicked() {
                                         self.selected_pattern = name.to_owned();

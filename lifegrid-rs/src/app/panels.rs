@@ -8,16 +8,9 @@ impl LifeGridApp {
             Vec2::new(8.0, 8.0)
         };
 
-        let card_fill = if self.dark_mode {
-            Color32::from_rgb(24, 27, 34)
-        } else {
-            Color32::from_rgb(246, 248, 252)
-        };
-        let card_stroke = if self.dark_mode {
-            Color32::from_rgb(52, 58, 72)
-        } else {
-            Color32::from_rgb(208, 216, 228)
-        };
+        let colors = self.theme.colors();
+        let card_fill = colors.card;
+        let card_stroke = colors.stroke;
         let card_margin = if self.compact_mode {
             egui::Margin::same(8)
         } else {
@@ -99,7 +92,7 @@ impl LifeGridApp {
 
         // ── Mode info ────────────────────────────────────────────────────────
         section_frame.show(ui, |ui| {
-            let accent = mode_accent_color(&self.selected_mode);
+            let accent = self.theme.accent(&self.selected_mode);
             ui.label(
                 egui::RichText::new(self.sim.automaton_name())
                     .strong()
@@ -271,6 +264,16 @@ impl LifeGridApp {
             egui::CollapsingHeader::new("View")
                 .default_open(true)
                 .show(ui, |ui| {
+                    ui.label("Theme:");
+                    egui::ComboBox::from_id_salt("theme_combo")
+                        .selected_text(self.theme.name())
+                        .width(ui.available_width() - 4.0)
+                        .show_ui(ui, |ui| {
+                            for &theme in Theme::all() {
+                                ui.selectable_value(&mut self.theme, theme, theme.name());
+                            }
+                        });
+
                     ui.label(format!("Speed: {} steps/s", self.speed));
                     ui.add(egui::Slider::new(&mut self.speed, 1..=200).show_value(false));
 
@@ -361,7 +364,7 @@ impl LifeGridApp {
                             .show(ui, |plot_ui| {
                                 plot_ui.line(
                                     egui_plot::Line::new("population", points)
-                                        .color(mode_accent_color(&self.selected_mode))
+                                        .color(self.theme.accent(&self.selected_mode))
                                         .width(1.5),
                                 );
                             });

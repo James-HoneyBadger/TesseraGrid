@@ -34,6 +34,8 @@ for scripted runs.
 - **Live statistics** — population chart with axes, peak/min/average, CSV export.
 - **Session state** — save/load `.lifegrid` JSON files; UI settings persist.
 - **Headless CLI** — drive the same engine from scripts and CI.
+- **8 color themes** — Dark, Light, Nord, Solarized Dark, Gruvbox, Dracula,
+  High Contrast, and Paper; switch instantly with `T`.
 - **Cross-platform** — Linux, macOS, and Windows.
 
 ---
@@ -49,6 +51,10 @@ for scripted runs.
 | ![Pattern gallery](docs/screenshots/pattern-gallery.png) | ![Population chart](docs/screenshots/statistics.png) |
 
 ![Keyboard shortcuts](docs/screenshots/shortcuts.png)
+
+![Themes](docs/screenshots/themes.png)
+
+*Nord, Solarized Dark, Gruvbox, Dracula, High Contrast and Paper.*
 
 ---
 
@@ -156,6 +162,7 @@ cargo run --release -- --steps 100 --stats
 | Reset to selected pattern | `R` |
 | Randomize (current seed) | `N` |
 | Toggle grid lines | `G` |
+| Cycle color theme | `T` |
 | Zoom to fit | `F` or `Ctrl+0` |
 | Toggle isometric 3-D | `V` |
 | Zoom in / out | `+` / `-` |
@@ -189,6 +196,7 @@ Choose **Custom Rules** and type B/S notation, for example:
   - macOS: `~/Library/Application Support/lifegrid/`
   - Windows: `%APPDATA%\lifegrid\`
   - Override the directory with `LIFEGRID_CONFIG_DIR`.
+  - The active theme, panel width, view mode, and brush size are saved here.
 
 ---
 

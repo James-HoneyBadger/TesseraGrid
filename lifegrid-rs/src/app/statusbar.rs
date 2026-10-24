@@ -17,7 +17,7 @@ impl LifeGridApp {
             ui.separator();
             ui.label(format!("{:.0} gen/s", self.gen_rate));
             ui.separator();
-            ui.colored_label(mode_accent_color(&self.selected_mode), &self.selected_mode);
+            ui.colored_label(self.theme.accent(&self.selected_mode), &self.selected_mode);
             if let Some((x, y, state)) = self.hover_cell {
                 ui.separator();
                 ui.label(format!("Cell ({x}, {y}) · state {state}"));
@@ -32,7 +32,7 @@ impl LifeGridApp {
                 if let Some((msg, ts)) = &self.status_msg {
                     if ts.elapsed() < Duration::from_secs(4) {
                         ui.separator();
-                        ui.colored_label(Color32::from_rgb(100, 220, 100), msg);
+                        ui.colored_label(self.theme.colors().ok, msg);
                     }
                 }
             });
