@@ -60,6 +60,31 @@ jobs:
             libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
       - run: cargo test --all-targets
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Measure coverage
+        run: cargo llvm-cov --all-targets --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: tessera-grid-rs/lcov.info
+          if-no-files-found: error
+
   build:
     name: Release build
     runs-on: ubuntu-latest

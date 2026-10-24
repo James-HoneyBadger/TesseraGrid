@@ -1,0 +1,45 @@
+name: Security audit
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'tessera-grid-rs/Cargo.toml'
+      - 'tessera-grid-rs/Cargo.lock'
+      - 'tessera-grid-rs/deny.toml'
+      - '.github/workflows/audit.yml'
+  pull_request:
+    paths:
+      - 'tessera-grid-rs/Cargo.toml'
+      - 'tessera-grid-rs/Cargo.lock'
+      - 'tessera-grid-rs/deny.toml'
+      - '.github/workflows/audit.yml'
+  schedule:
+    # Weekly, so new advisories are noticed even without dependency changes.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: tessera-grid-rs
+
+jobs:
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # Checks advisories (the same database `cargo audit` uses), licenses,
+      # banned crates and dependency sources. Ignored advisories are documented
+      # in tessera-grid-rs/deny.toml.
+      - run: cargo deny check

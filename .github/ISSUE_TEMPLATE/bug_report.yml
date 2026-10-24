@@ -1,0 +1,75 @@
+name: Bug report
+description: Something behaves incorrectly in the simulator or the CLI
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please include enough detail to reproduce the
+        problem. For rendering issues, a screenshot helps a lot.
+  - type: input
+    id: version
+    attributes:
+      label: Tessera Grid version
+      description: Output of `tessera --version`, or the release tag you downloaded.
+      placeholder: tessera 6.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux (X11)
+        - Linux (Wayland)
+        - macOS
+        - Windows
+        - Other / unsure
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Canvas / rendering
+        - Simulation rules
+        - Sidebar / controls
+        - Timeline scrubbing
+        - Pattern editor
+        - Import / export
+        - Headless CLI
+        - Themes
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start `tessera`
+        2. Select mode ...
+        3. Press ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include any terminal output or panic backtraces.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots, configuration (omit personal paths), or related issues.
+    validations:
+      required: false

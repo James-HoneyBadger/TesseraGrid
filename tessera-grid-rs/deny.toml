@@ -1,0 +1,62 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+#
+# CI runs `cargo deny check` from this directory; `cargo audit` covers
+# advisories separately, so this file focuses on licenses, bans and sources.
+
+[graph]
+# Check the platform actually used by CI and release builds.
+targets = [
+  { triple = "x86_64-unknown-linux-gnu" },
+  { triple = "x86_64-pc-windows-msvc" },
+  { triple = "aarch64-apple-darwin" },
+]
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = [
+  # quick-xml is a *build-time* dependency of wayland-scanner's proc macro, which
+  # parses the Wayland protocol XML bundled with the crate; no user input reaches
+  # it, and no wayland-scanner release accepts a fixed quick-xml yet.
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
+  # `zbus_names`/`zvariant` are unmaintained rather than vulnerable; they arrive
+  # through accesskit on Linux and need an egui/accesskit update to replace.
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0372",
+]
+yanked = "deny"
+
+[licenses]
+# Permissive licenses used by the egui/winit/clap ecosystem.
+allow = [
+  "MIT",
+  "MIT-0",
+  "OFL-1.1",
+  "Ubuntu-font-1.0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CC0-1.0",
+  "BSL-1.0",
+  "MPL-2.0",
+  "OpenSSL",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
