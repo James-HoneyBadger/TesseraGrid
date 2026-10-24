@@ -1,6 +1,6 @@
 # Code of Conduct
 
-LifeGrid is a Rust/egui cellular-automata project. We want it to be a welcoming place for everyone who wants to contribute, report issues, or just explore the code.
+Tessera Grid is a Rust/egui cellular-automata project. We want it to be a welcoming place for everyone who wants to contribute, report issues, or just explore the code.
 
 ## Our Pledge
 
@@ -35,4 +35,4 @@ This Code of Conduct applies within all project spaces (GitHub, issue trackers, 
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1, tailored for the LifeGrid project.
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1, tailored for the Tessera Grid project.

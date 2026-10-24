@@ -20,14 +20,14 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset: lifegrid-linux-x86_64
-            binary: lifegrid
+            asset: tessera-linux-x86_64
+            binary: tessera
           - os: windows-latest
-            asset: lifegrid-windows-x86_64.exe
-            binary: lifegrid.exe
+            asset: tessera-windows-x86_64.exe
+            binary: tessera.exe
           - os: macos-latest
-            asset: lifegrid-macos-arm64
-            binary: lifegrid
+            asset: tessera-macos-arm64
+            binary: tessera
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -40,12 +40,12 @@ jobs:
             libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
       - name: Build release binary
         run: cargo build --release --locked
-        working-directory: lifegrid-rs
+        working-directory: tessera-grid-rs
       - name: Stage binary
         shell: bash
         run: |
           mkdir -p dist
-          cp "lifegrid-rs/target/release/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+          cp "tessera-grid-rs/target/release/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
       - name: Strip binary
         if: runner.os != 'Windows'
         run: strip -s "dist/${{ matrix.asset }}" || true
@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: lifegrid-*
+          pattern: tessera-*
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2

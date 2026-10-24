@@ -15,9 +15,9 @@ use crate::sim::{RuleSpec, Simulation};
 
 const DEFAULT_MODE: &str = "Conway's Game of Life";
 
-/// LifeGrid – a cellular-automaton simulator (GUI by default, headless on demand).
+/// Tessera Grid – a cellular-automaton simulator (GUI by default, headless on demand).
 #[derive(Parser, Debug)]
-#[command(name = "lifegrid", version, about, long_about = None)]
+#[command(name = "tessera", version, about, long_about = None)]
 pub struct Cli {
     /// Run without opening a window.
     #[arg(long)]
@@ -221,15 +221,9 @@ mod tests {
 
     #[test]
     fn parses_headless_flags() {
-        let cli = Cli::try_parse_from([
-            "lifegrid",
-            "--headless",
-            "--steps",
-            "10",
-            "--png",
-            "out.png",
-        ])
-        .expect("parse");
+        let cli =
+            Cli::try_parse_from(["tessera", "--headless", "--steps", "10", "--png", "out.png"])
+                .expect("parse");
         assert!(cli.is_headless());
         assert_eq!(cli.steps, 10);
         assert_eq!(cli.png.as_deref(), Some(std::path::Path::new("out.png")));
@@ -237,13 +231,13 @@ mod tests {
 
     #[test]
     fn no_flags_means_gui() {
-        let cli = Cli::try_parse_from(["lifegrid"]).expect("parse");
+        let cli = Cli::try_parse_from(["tessera"]).expect("parse");
         assert!(!cli.is_headless());
     }
 
     #[test]
     fn rule_implies_custom_mode() {
-        let cli = Cli::try_parse_from(["lifegrid", "--rule", "B36/S23", "--stats"]).expect("parse");
+        let cli = Cli::try_parse_from(["tessera", "--rule", "B36/S23", "--stats"]).expect("parse");
         assert!(cli.is_headless());
         let (birth, survival) = LifeLike::parse_bs(cli.rule.as_deref().unwrap());
         assert_eq!(birth, vec![3, 6]);

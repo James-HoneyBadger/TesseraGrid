@@ -76,7 +76,7 @@ enum ToolMode {
 }
 
 // ---------------------------------------------------------------------------
-// Saved state (serialised to .lifegrid JSON)
+// Saved state (serialised to .tessera JSON)
 // ---------------------------------------------------------------------------
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -92,7 +92,7 @@ struct SavedState {
 // Application state
 // ---------------------------------------------------------------------------
 
-pub struct LifeGridApp {
+pub struct TesseraGridApp {
     // ── Simulation ──────────────────────────────────────────────────────────
     sim: Simulation,
     running: bool,
@@ -174,7 +174,7 @@ pub struct LifeGridApp {
     theme_key: Option<(Theme, bool, Color32)>,
 }
 
-impl LifeGridApp {
+impl TesseraGridApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let (cfg, config_warning) = AppConfig::try_load();
 
@@ -400,7 +400,7 @@ impl LifeGridApp {
     fn export_png_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("PNG image", &["png"])
-            .set_file_name("lifegrid.png")
+            .set_file_name("tessera.png")
             .save_file()
         else {
             return;
@@ -419,7 +419,7 @@ impl LifeGridApp {
         }
         let Some(path) = rfd::FileDialog::new()
             .add_filter("GIF animation", &["gif"])
-            .set_file_name("lifegrid.gif")
+            .set_file_name("tessera.gif")
             .save_file()
         else {
             return;
@@ -473,7 +473,7 @@ impl LifeGridApp {
     fn export_stats_csv(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("CSV", &["csv"])
-            .set_file_name("lifegrid_stats.csv")
+            .set_file_name("tessera_stats.csv")
             .save_file()
         else {
             return;
@@ -494,7 +494,7 @@ impl LifeGridApp {
 
     fn save_state(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("LifeGrid state", &["lifegrid"])
+            .add_filter("Tessera Grid state", &["tessera", "lifegrid"])
             .save_file()
         {
             let (w, h, cells) = {
@@ -520,7 +520,7 @@ impl LifeGridApp {
 
     fn load_state(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("LifeGrid state", &["lifegrid"])
+            .add_filter("Tessera Grid state", &["tessera", "lifegrid"])
             .pick_file()
         {
             match std::fs::read_to_string(&path) {
@@ -680,7 +680,7 @@ impl LifeGridApp {
             iso_height: self.iso_height,
         };
         if let Err(err) = cfg.save() {
-            eprintln!("LifeGrid: {err}");
+            eprintln!("Tessera Grid: {err}");
         }
     }
 
@@ -813,7 +813,7 @@ impl LifeGridApp {
 // eframe::App
 // ---------------------------------------------------------------------------
 
-impl eframe::App for LifeGridApp {
+impl eframe::App for TesseraGridApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_theme(ctx);
 

@@ -1,10 +1,11 @@
 # Rust build artifacts
 /target/
-/lifegrid-rs/target/
+/tessera-grid-rs/target/
 
 # Generated output
 *.png
 *.gif
+*.tessera
 *.lifegrid
 !docs/**/*.png
 !docs/**/*.gif

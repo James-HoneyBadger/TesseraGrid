@@ -12,7 +12,7 @@ env:
 
 defaults:
   run:
-    working-directory: lifegrid-rs
+    working-directory: tessera-grid-rs
 
 jobs:
   fmt:

@@ -1,6 +1,6 @@
 use super::*;
 
-impl LifeGridApp {
+impl TesseraGridApp {
     pub(super) fn ui_controls(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing = if self.compact_mode {
             Vec2::new(6.0, 6.0)
@@ -414,14 +414,14 @@ impl LifeGridApp {
                         let w = (ui.available_width() - 8.0) / 2.0;
                         if ui
                             .add_sized([w, button_h], egui::Button::new("Save State..."))
-                            .on_hover_text("Save current grid to a .lifegrid file")
+                            .on_hover_text("Save current grid to a .tessera file")
                             .clicked()
                         {
                             self.save_state();
                         }
                         if ui
                             .add_sized([w, button_h], egui::Button::new("Load State..."))
-                            .on_hover_text("Load a previously saved .lifegrid file")
+                            .on_hover_text("Load a previously saved .tessera (or .lifegrid) file")
                             .clicked()
                         {
                             self.load_state();

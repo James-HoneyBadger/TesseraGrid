@@ -1,6 +1,6 @@
-# Contributing to LifeGrid
+# Contributing to Tessera Grid
 
-Thanks for your interest in contributing! This guide covers setup, workflow, and standards for the Rust/egui rewrite of LifeGrid.
+Thanks for your interest in contributing! This guide covers setup, workflow, and standards for Tessera Grid (crate `tessera-grid`, binary `tessera`).
 
 ---
 
@@ -20,7 +20,7 @@ Thanks for your interest in contributing! This guide covers setup, workflow, and
 
 ```bash
 git clone https://github.com/James-HoneyBadger/LifeGrid.git
-cd LifeGrid/lifegrid-rs
+cd LifeGrid/tessera-grid-rs
 cargo build
 ```
 
@@ -34,7 +34,7 @@ Build an optimised release binary:
 
 ```bash
 cargo build --release
-./target/release/lifegrid
+./target/release/tessera
 ```
 
 ---
@@ -94,7 +94,7 @@ cargo build --release
 
 ## Adding an Automaton Mode
 
-1. Create `lifegrid-rs/src/automata/<name>.rs` implementing the `Automaton` trait:
+1. Create `tessera-grid-rs/src/automata/<name>.rs` implementing the `Automaton` trait:
 
    ```rust
    use crate::core::{BoundaryMode, Grid};
@@ -152,16 +152,16 @@ cargo build --release
 
 | Path | Purpose |
 |------|---------|
-| `lifegrid-rs/src/main.rs` | CLI dispatch and GUI launch |
-| `lifegrid-rs/src/cli.rs` | Headless command-line interface |
-| `lifegrid-rs/src/app/` | egui state, canvas, panels, menus, dialogs, theme |
-| `lifegrid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
-| `lifegrid-rs/src/rle.rs` | RLE import/export |
-| `lifegrid-rs/src/automata/` | Automaton trait, implementations, rule tests |
-| `lifegrid-rs/src/core/` | Grid, boundary modes, undo manager, config |
-| `lifegrid-rs/src/export.rs` | PNG and GIF rendering |
-| `lifegrid-rs/src/patterns.rs` | Built-in Conway pattern data |
-| `lifegrid-rs/tests/` | End-to-end CLI tests |
+| `tessera-grid-rs/src/main.rs` | CLI dispatch and GUI launch |
+| `tessera-grid-rs/src/cli.rs` | Headless command-line interface |
+| `tessera-grid-rs/src/app/` | egui state, canvas, panels, menus, dialogs, theme |
+| `tessera-grid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
+| `tessera-grid-rs/src/rle.rs` | RLE import/export |
+| `tessera-grid-rs/src/automata/` | Automaton trait, implementations, rule tests |
+| `tessera-grid-rs/src/core/` | Grid, boundary modes, undo manager, config |
+| `tessera-grid-rs/src/export.rs` | PNG and GIF rendering |
+| `tessera-grid-rs/src/patterns.rs` | Built-in Conway pattern data |
+| `tessera-grid-rs/tests/` | End-to-end CLI tests |
 
 ---
 

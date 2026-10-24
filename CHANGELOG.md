@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.0] — 2026-10-24
+
+### Changed
+- Renamed the project to **Tessera Grid**. The crate is now `tessera-grid` and
+  the binary/CLI is `tessera`; the window title, app id and release assets use
+  the new name.
+- Configuration now lives at `tessera-grid/config.json` and honours
+  `TESSERA_CONFIG_DIR`. An existing
+  `~/.config/lifegrid/lifegrid_config.json` is imported automatically on first
+  launch, and `LIFEGRID_CONFIG_DIR` is still accepted.
+- Saved grids use the `.tessera` extension; legacy `.lifegrid` files remain
+  loadable.
+- The crate directory is now `tessera-grid-rs/`.
+
 ## [5.2.0] — 2026-10-24
 
 ### Added

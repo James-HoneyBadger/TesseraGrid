@@ -33,19 +33,19 @@ fn pattern_thumbnail(ui: &mut egui::Ui, name: &str, theme: Theme) {
     }
 }
 
-impl LifeGridApp {
+impl TesseraGridApp {
     pub(super) fn ui_about(&mut self, ctx: &egui::Context) {
         if !self.show_about {
             return;
         }
         let mut open = true;
-        egui::Window::new("About LifeGrid")
+        egui::Window::new("About Tessera Grid")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.heading("LifeGrid");
+                ui.heading("Tessera Grid");
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                 ui.label("A fast, native cellular-automaton simulator built with Rust and egui.");
                 ui.label("MIT licensed.");

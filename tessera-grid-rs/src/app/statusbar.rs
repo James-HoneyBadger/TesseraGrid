@@ -1,6 +1,6 @@
 use super::*;
 
-impl LifeGridApp {
+impl TesseraGridApp {
     pub(super) fn ui_statusbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let (gw, gh) = (self.sim.width(), self.sim.height());

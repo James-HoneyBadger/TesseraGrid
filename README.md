@@ -1,4 +1,4 @@
-# LifeGrid
+# Tessera Grid
 
 [![CI](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/ci.yml)
 [![Release](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/release.yml/badge.svg)](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/release.yml)
@@ -6,7 +6,7 @@
 
 A fast, native cellular-automaton simulator built with **Rust** and **egui**.
 
-LifeGrid runs ten classic and custom automata in one interactive window — with a
+Tessera Grid runs ten classic and custom automata in one interactive window — with a
 pattern gallery, seeded random soups, custom B/S rules, an isometric 3-D view,
 RLE import/export, PNG/GIF capture, a live population chart, and a headless CLI
 for scripted runs.
@@ -32,7 +32,7 @@ for scripted runs.
 - **Export** — PNG snapshot or animated GIF (frames buffered to a 256 MB budget).
 - **Undo / redo** — 100 snapshots covering every edit, including generation.
 - **Live statistics** — population chart with axes, peak/min/average, CSV export.
-- **Session state** — save/load `.lifegrid` JSON files; UI settings persist.
+- **Session state** — save/load `.tessera` JSON files (legacy `.lifegrid` files still load); UI settings persist.
 - **Headless CLI** — drive the same engine from scripts and CI.
 - **8 color themes** — Dark, Light, Nord, Solarized Dark, Gruvbox, Dracula,
   High Contrast, and Paper; switch instantly with `T`.
@@ -93,17 +93,17 @@ jobs:
 Or work directly in the crate:
 
 ```bash
-cd lifegrid-rs
+cd tessera-grid-rs
 cargo run --release
-cargo build --release && ./target/release/lifegrid
+cargo build --release && ./target/release/tessera
 ```
 
 ---
 
 ## Headless CLI
 
-Any run with steps, exports, or `--headless` skips the GUI entirely — useful for
-servers, CI, and reproducible experiments.
+The binary is `tessera`. Any run with steps, exports, or `--headless` skips the
+GUI entirely — useful for servers, CI, and reproducible experiments.
 
 | Flag | Description |
 |------|-------------|
@@ -185,17 +185,19 @@ Choose **Custom Rules** and type B/S notation, for example:
 
 ### Saving and exporting
 
-- **State files** (`.lifegrid`) are JSON containing the mode, generation, size,
-  and cell buffer; they load across versions.
+- **State files** (`.tessera`) are JSON containing the mode, generation, size,
+  and cell buffer; they load across versions, and legacy `.lifegrid` files can
+  still be opened.
 - **RLE** uses standard Golly/LifeWiki syntax and carries the active rule in the
   header (`B36/S23`, `B2/S34H`, `WireWorld`, …).
 - **GIF** recording keeps the newest frames within a 256 MB budget so long runs
   cannot exhaust memory.
 - **Configuration** is stored at:
-  - Linux: `$XDG_CONFIG_HOME/lifegrid/` or `~/.config/lifegrid/`
-  - macOS: `~/Library/Application Support/lifegrid/`
-  - Windows: `%APPDATA%\lifegrid\`
-  - Override the directory with `LIFEGRID_CONFIG_DIR`.
+  - Linux: `$XDG_CONFIG_HOME/tessera-grid/` or `~/.config/tessera-grid/`
+  - macOS: `~/Library/Application Support/tessera-grid/`
+  - Windows: `%APPDATA%\tessera-grid\`
+  - Override the directory with `TESSERA_CONFIG_DIR` (`LIFEGRID_CONFIG_DIR` is
+    still honoured). An existing LifeGrid config is imported automatically.
   - The active theme, panel width, view mode, and brush size are saved here.
 
 ---
@@ -220,8 +222,8 @@ Choose **Custom Rules** and type B/S notation, for example:
 ## Project Structure
 
 ```text
-LifeGrid/
-├── lifegrid-rs/
+LifeGrid/                 # repository name
+├── tessera-grid-rs/       # crate: tessera-grid, binary: tessera
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── main.rs          # CLI dispatch + GUI launch
@@ -253,7 +255,7 @@ LifeGrid/
 ## Development
 
 ```bash
-cd lifegrid-rs
+cd tessera-grid-rs
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets

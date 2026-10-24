@@ -28,7 +28,7 @@ fn line_cells(from: (i64, i64), to: (i64, i64)) -> Vec<(i64, i64)> {
     out
 }
 
-impl LifeGridApp {
+impl TesseraGridApp {
     /// Paint a brush stroke along the line between two cells.
     pub(super) fn paint_line(&mut self, from: Option<(i64, i64)>, to: (i64, i64), state: u8) {
         let (gw, gh) = (self.sim.width() as i64, self.sim.height() as i64);

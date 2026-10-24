@@ -1805,23 +1805,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lifegrid"
-version = "5.2.0"
-dependencies = [
- "arboard",
- "clap",
- "eframe",
- "egui",
- "egui_plot",
- "image",
- "rand",
- "rayon",
- "rfd",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "linebender_resource_handle"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3092,6 +3075,23 @@ dependencies = [
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tessera-grid"
+version = "6.0.0"
+dependencies = [
+ "arboard",
+ "clap",
+ "eframe",
+ "egui",
+ "egui_plot",
+ "image",
+ "rand",
+ "rayon",
+ "rfd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

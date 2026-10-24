@@ -1,6 +1,6 @@
 use super::*;
 
-impl LifeGridApp {
+impl TesseraGridApp {
     pub(super) fn ui_menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
@@ -124,7 +124,7 @@ impl LifeGridApp {
                     self.show_gallery = true;
                     ui.close();
                 }
-                if ui.button("About LifeGrid").clicked() {
+                if ui.button("About Tessera Grid").clicked() {
                     self.show_about = true;
                     ui.close();
                 }
@@ -137,7 +137,7 @@ impl LifeGridApp {
             let accent = self.theme.accent(&self.selected_mode);
 
             ui.label(
-                egui::RichText::new("LifeGrid")
+                egui::RichText::new("Tessera Grid")
                     .strong()
                     .size(16.0)
                     .color(accent),

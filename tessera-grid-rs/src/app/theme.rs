@@ -1,6 +1,6 @@
 use super::*;
 
-impl LifeGridApp {
+impl TesseraGridApp {
     pub(super) fn apply_theme(&mut self, ctx: &egui::Context) {
         let colors = self.theme.colors();
         let accent = self.theme.accent(&self.selected_mode);

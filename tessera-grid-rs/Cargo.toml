@@ -1,13 +1,13 @@
 [package]
-name         = "lifegrid"
-version      = "5.2.0"
+name         = "tessera-grid"
+version      = "6.0.0"
 edition      = "2021"
 rust-version = "1.95"
-description  = "LifeGrid – cellular automaton simulator (egui/Rust port)"
+description  = "Tessera Grid – cellular automaton simulator (egui/Rust)"
 license      = "MIT"
 
 [[bin]]
-name = "lifegrid"
+name = "tessera"
 path = "src/main.rs"
 
 [dependencies]

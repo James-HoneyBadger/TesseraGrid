@@ -109,29 +109,52 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn config_path() -> PathBuf {
-        config_dir().join("lifegrid_config.json")
+        config_dir().join("config.json")
     }
 
-    /// Load the config, returning a human-readable warning when a file exists
-    /// but cannot be parsed (the defaults are used in that case).
+    /// Location of the pre-rename LifeGrid config, used for a one-time import.
+    pub fn legacy_config_path() -> PathBuf {
+        if let Some(dir) = std::env::var_os("LIFEGRID_CONFIG_DIR") {
+            return PathBuf::from(dir).join("lifegrid_config.json");
+        }
+        default_config_dir("lifegrid").join("lifegrid_config.json")
+    }
+
+    /// Load the config, importing the legacy LifeGrid config when the new one
+    /// does not exist yet. Returns a warning when a file could not be parsed.
     pub fn try_load() -> (Self, Option<String>) {
         let path = Self::config_path();
-        let Ok(data) = std::fs::read_to_string(&path) else {
-            return (Self::default(), None);
-        };
-        match serde_json::from_str::<Self>(&data) {
-            Ok(mut cfg) => {
-                cfg.sanitize();
-                (cfg, None)
-            }
-            Err(err) => (
-                Self::default(),
-                Some(format!(
-                    "Config at {} is invalid ({err}); using defaults",
-                    path.display()
-                )),
-            ),
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            return match serde_json::from_str::<Self>(&data) {
+                Ok(mut cfg) => {
+                    cfg.sanitize();
+                    (cfg, None)
+                }
+                Err(err) => (
+                    Self::default(),
+                    Some(format!(
+                        "Config at {} is invalid ({err}); using defaults",
+                        path.display()
+                    )),
+                ),
+            };
         }
+
+        let legacy = Self::legacy_config_path();
+        if legacy != path {
+            if let Ok(data) = std::fs::read_to_string(&legacy) {
+                if let Ok(mut cfg) = serde_json::from_str::<Self>(&data) {
+                    cfg.sanitize();
+                    let _ = cfg.save();
+                    return (
+                        cfg,
+                        Some(format!("Imported settings from {}", legacy.display())),
+                    );
+                }
+            }
+        }
+
+        (Self::default(), None)
     }
 
     /// Clamp values into the ranges the UI supports.
@@ -169,18 +192,25 @@ impl AppConfig {
 }
 
 fn config_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("TESSERA_CONFIG_DIR") {
+        return PathBuf::from(dir);
+    }
+    // Honour the pre-rename variable so existing setups keep working.
     if let Some(dir) = std::env::var_os("LIFEGRID_CONFIG_DIR") {
         return PathBuf::from(dir);
     }
+    default_config_dir("tessera-grid")
+}
 
+fn default_config_dir(app: &str) -> PathBuf {
     #[cfg(target_os = "windows")]
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        return PathBuf::from(appdata).join("lifegrid");
+        return PathBuf::from(appdata).join(app);
     }
 
     if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
         if !xdg.is_empty() {
-            return PathBuf::from(xdg).join("lifegrid");
+            return PathBuf::from(xdg).join(app);
         }
     }
 
@@ -188,18 +218,15 @@ fn config_dir() -> PathBuf {
         let home = PathBuf::from(home);
         #[cfg(target_os = "macos")]
         {
-            return home
-                .join("Library")
-                .join("Application Support")
-                .join("lifegrid");
+            return home.join("Library").join("Application Support").join(app);
         }
         #[cfg(not(target_os = "macos"))]
         {
-            return home.join(".config").join("lifegrid");
+            return home.join(".config").join(app);
         }
     }
 
-    PathBuf::from(".lifegrid")
+    PathBuf::from(".config").join(app)
 }
 
 #[cfg(test)]
@@ -216,6 +243,22 @@ mod tests {
         assert_eq!(cfg.view_mode, "Flat");
         assert!(cfg.dark_mode);
         assert!(cfg.theme.is_empty(), "old configs omit the theme");
+    }
+
+    #[test]
+    fn config_paths_use_the_new_names() {
+        assert_eq!(
+            AppConfig::config_path()
+                .file_name()
+                .and_then(|n| n.to_str()),
+            Some("config.json")
+        );
+        assert_eq!(
+            AppConfig::legacy_config_path()
+                .file_name()
+                .and_then(|n| n.to_str()),
+            Some("lifegrid_config.json")
+        );
     }
 
     #[test]
