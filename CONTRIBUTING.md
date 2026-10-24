@@ -19,8 +19,8 @@ Thanks for your interest in contributing! This guide covers setup, workflow, and
 ### Clone and Build
 
 ```bash
-git clone https://github.com/James-HoneyBadger/LifeGrid.git
-cd LifeGrid/tessera-grid-rs
+git clone https://github.com/James-HoneyBadger/TesseraGrid.git
+cd TesseraGrid/tessera-grid-rs
 cargo build
 ```
 

@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Saved grids use the `.tessera` extension; legacy `.lifegrid` files remain
   loadable.
 - The crate directory is now `tessera-grid-rs/`.
+- The GitHub repository is now `James-HoneyBadger/TesseraGrid`; GitHub redirects
+  the previous `LifeGrid` URLs.
 
 ## [5.2.0] — 2026-10-24
 

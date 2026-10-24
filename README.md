@@ -1,7 +1,7 @@
 # Tessera Grid
 
-[![CI](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/ci.yml)
-[![Release](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/release.yml/badge.svg)](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/release.yml)
+[![CI](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/ci.yml)
+[![Release](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/release.yml/badge.svg)](https://github.com/James-HoneyBadger/TesseraGrid/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A fast, native cellular-automaton simulator built with **Rust** and **egui**.
@@ -78,8 +78,8 @@ for scripted runs.
 ## Quick Start
 
 ```bash
-git clone https://github.com/James-HoneyBadger/LifeGrid.git
-cd LifeGrid
+git clone https://github.com/James-HoneyBadger/TesseraGrid.git
+cd TesseraGrid
 ./run-simulation.sh
 ```
 
@@ -222,7 +222,7 @@ Choose **Custom Rules** and type B/S notation, for example:
 ## Project Structure
 
 ```text
-LifeGrid/                 # repository name
+TesseraGrid/              # repository name
 ├── tessera-grid-rs/       # crate: tessera-grid, binary: tessera
 │   ├── Cargo.toml
 │   ├── src/
