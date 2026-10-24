@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `app/dialogs/` (one module per dialog).
 - Theme palettes moved to `src/theme/palettes.rs`; `Theme` itself stays in
   `src/theme/mod.rs`.
+- The headless CLI is split into `src/cli/args.rs` (clap definitions) and
+  `src/cli/run.rs` (execution).
 
 ## [6.0.0] — 2026-10-24
 

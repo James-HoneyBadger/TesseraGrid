@@ -97,7 +97,7 @@ cargo build --release
 - Update `README.md`, `CHANGELOG.md`, and this file when behaviour changes.
 - Keep shortcut text in sync: `SHORTCUTS` in `src/app/dialogs/help.rs`, the
   in-app help dialog, and the keyboard table in `README.md`.
-- CLI flags live in `src/cli.rs`; `tessera --help` is generated, so keep the
+- CLI flags live in `src/cli/args.rs`; `tessera --help` is generated, so keep the
   README flag table aligned with it.
 - Screenshots live in `docs/screenshots/` and are referenced from `README.md`.
 
@@ -191,7 +191,7 @@ loading older files:
 | Path | Purpose |
 |------|---------|
 | `tessera-grid-rs/src/main.rs` | CLI dispatch and GUI launch |
-| `tessera-grid-rs/src/cli.rs` | Headless command-line interface |
+| `tessera-grid-rs/src/cli/` | CLI arguments and headless run |
 | `tessera-grid-rs/src/app/` | egui shell, actions, input, I/O, canvas, sidebar, dialogs |
 | `tessera-grid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
 | `tessera-grid-rs/src/rle.rs` | RLE import/export |

@@ -246,7 +246,10 @@ TesseraGrid/              # repository name
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── main.rs          # CLI dispatch + GUI launch
-│   │   ├── cli.rs           # headless command line
+│   │   ├── cli/             # headless command line
+│   │   │   ├── mod.rs       # shared setup and CLI tests
+│   │   │   ├── args.rs      # clap argument definitions
+│   │   │   └── run.rs       # headless run
 │   │   ├── app/             # egui layer (no engine logic)
 │   │   │   ├── mod.rs       # shared state, enums, constructor
 │   │   │   ├── shell.rs     # eframe::App: frame loop, layout, exit
