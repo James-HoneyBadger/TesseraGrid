@@ -92,11 +92,6 @@ impl Automaton for LifeLike {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, 1 - v);
-    }
-
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
         let mut rng = rand::rng();
@@ -115,5 +110,10 @@ impl Automaton for LifeLike {
 
     fn set_boundary(&mut self, mode: BoundaryMode) {
         self.boundary = mode;
+    }
+    fn rule_string(&self) -> String {
+        let birth: String = self.birth.iter().map(|n| n.to_string()).collect();
+        let survival: String = self.survival.iter().map(|n| n.to_string()).collect();
+        format!("B{birth}/S{survival}")
     }
 }

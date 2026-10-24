@@ -50,11 +50,6 @@ impl Automaton for HighLife {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, 1 - v);
-    }
-
     fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
         let w = self.grid.width;
@@ -90,5 +85,8 @@ impl Automaton for HighLife {
 
     fn set_boundary(&mut self, mode: BoundaryMode) {
         self.boundary = mode;
+    }
+    fn rule_string(&self) -> String {
+        "B36/S23".to_owned()
     }
 }

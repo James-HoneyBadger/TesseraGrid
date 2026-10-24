@@ -50,11 +50,6 @@ impl Automaton for ConwayLife {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, 1 - v);
-    }
-
     fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
         let w = self.grid.width;

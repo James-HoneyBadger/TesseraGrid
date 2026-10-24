@@ -48,11 +48,6 @@ impl Automaton for BriansBrain {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, if v == 0 { 1 } else { 0 });
-    }
-
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
         let mut rng = rand::rng();
@@ -71,5 +66,12 @@ impl Automaton for BriansBrain {
 
     fn set_boundary(&mut self, mode: BoundaryMode) {
         self.boundary = mode;
+    }
+    fn rule_string(&self) -> String {
+        "Brian'sBrain".to_owned()
+    }
+
+    fn max_state(&self) -> u8 {
+        2
     }
 }

@@ -3,6 +3,8 @@ mod automata;
 mod core;
 mod export;
 mod patterns;
+mod rle;
+mod sim;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {

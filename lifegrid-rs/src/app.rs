@@ -2,9 +2,15 @@ use std::time::{Duration, Instant};
 
 use egui::{Color32, CornerRadius, Rect, Sense, Vec2};
 
-use crate::automata::{self, Automaton, LifeLike};
-use crate::core::{AppConfig, BoundaryMode, UndoManager};
+use crate::automata::{self, LifeLike};
+use crate::core::{AppConfig, BoundaryMode};
 use crate::export;
+use crate::rle;
+use crate::sim::{RuleSpec, Simulation};
+
+/// Upper bound on simulation steps per rendered frame, so that high speeds do
+/// not starve the UI thread.
+const MAX_STEPS_PER_FRAME: u32 = 8;
 
 // ---------------------------------------------------------------------------
 // Colour helpers
@@ -66,55 +72,6 @@ fn mode_accent_color(mode: &str) -> Color32 {
 }
 
 // ---------------------------------------------------------------------------
-// RLE clipboard import
-// ---------------------------------------------------------------------------
-
-/// Parse an RLE-encoded pattern string into (dx, dy) offsets from (0, 0).
-/// Supports the standard 2-state RLE format used by Golly and LifeWiki.
-fn parse_rle(rle: &str) -> Vec<(i32, i32)> {
-    let mut pts = Vec::new();
-    // Concatenate all non-comment, non-header lines into one string.
-    let data: String = rle
-        .lines()
-        .filter(|l| !l.starts_with('#') && !l.starts_with('x'))
-        .collect::<Vec<_>>()
-        .join("");
-    let mut x: i32 = 0;
-    let mut y: i32 = 0;
-    let mut count_str = String::new();
-    for ch in data.chars() {
-        match ch {
-            '0'..='9' => count_str.push(ch),
-            'b' | '.' => {
-                let n = count_str.parse::<i32>().unwrap_or(1);
-                x += n;
-                count_str.clear();
-            }
-            'o' | 'A'..='X' => {
-                let n = count_str.parse::<i32>().unwrap_or(1);
-                for dx in 0..n {
-                    pts.push((x + dx, y));
-                }
-                x += n;
-                count_str.clear();
-            }
-            '$' => {
-                let n = count_str.parse::<i32>().unwrap_or(1);
-                y += n;
-                x = 0;
-                count_str.clear();
-            }
-            '!' => break,
-            ' ' | '\t' | '\r' | '\n' => {}
-            _ => {
-                count_str.clear();
-            }
-        }
-    }
-    pts
-}
-
-// ---------------------------------------------------------------------------
 // View mode (2-D flat vs isometric 3-D)
 // ---------------------------------------------------------------------------
 
@@ -155,10 +112,8 @@ struct SavedState {
 
 pub struct LifeGridApp {
     // ── Simulation ──────────────────────────────────────────────────────────
-    automaton: Box<dyn Automaton>,
-    undo: UndoManager,
+    sim: Simulation,
     running: bool,
-    generation: u64,
     last_step: Instant,
 
     // ── Settings ────────────────────────────────────────────────────────────
@@ -183,26 +138,23 @@ pub struct LifeGridApp {
     drag_undo_pushed: bool,
 
     // ── Cell aging ───────────────────────────────────────────────────────────
-    age_grid: Vec<u32>,
     show_aging: bool,
-
-    // ── GIF recording ────────────────────────────────────────────────────────
-    record_frames: bool,
-    frame_buffer: Vec<Vec<u8>>,
-
-    // ── Statistics ───────────────────────────────────────────────────────────
-    pop_history: Vec<usize>,
 
     // ── Modals ───────────────────────────────────────────────────────────────
     show_run_n_dialog: bool,
     run_n_input: String,
+    run_n_total: u64,
+    run_n_pending: u64,
     show_resize_dialog: bool,
     resize_w_input: String,
     resize_h_input: String,
 
-    // ── FPS tracking ─────────────────────────────────────────────────────────
+    // ── Rate tracking ────────────────────────────────────────────────────────
     last_frame_time: Instant,
     fps: f32,
+    gen_rate: f32,
+    gen_sample_time: Instant,
+    gen_sample_generation: u64,
 
     // ── Status bar ───────────────────────────────────────────────────────────
     status_msg: Option<(String, Instant)>,
@@ -235,31 +187,24 @@ impl LifeGridApp {
             .find(|m| m.as_str() == cfg.boundary)
             .unwrap_or_default();
 
-        let mut automaton = Self::make_auto(
+        let mut sim = Simulation::new(
             &cfg.automaton_mode,
             cfg.grid_width,
             cfg.grid_height,
-            boundary,
-            &cfg.custom_birth,
-            &cfg.custom_survival,
+            RuleSpec::new(boundary, &cfg.custom_birth, &cfg.custom_survival),
+            "",
         );
 
-        let pattern = if automaton
-            .available_patterns()
-            .contains(&cfg.pattern.as_str())
-        {
+        let pattern = if sim.available_patterns().contains(&cfg.pattern.as_str()) {
             cfg.pattern.clone()
         } else {
-            automaton
-                .available_patterns()
+            sim.available_patterns()
                 .first()
                 .copied()
                 .unwrap_or("")
                 .to_owned()
         };
-        automaton.load_pattern(&pattern);
-
-        let n = automaton.get_grid().cells.len();
+        sim.load_pattern(&pattern);
 
         let custom_rule_str = {
             let b: String = cfg.custom_birth.iter().map(|n| n.to_string()).collect();
@@ -268,10 +213,8 @@ impl LifeGridApp {
         };
 
         Self {
-            automaton,
-            undo: UndoManager::new(100),
+            sim,
             running: false,
-            generation: 0,
             last_step: Instant::now(),
 
             speed: cfg.speed.clamp(1, 200),
@@ -292,22 +235,21 @@ impl LifeGridApp {
             paint_state: cfg.paint_state.max(1),
             drag_undo_pushed: false,
 
-            age_grid: vec![0u32; n],
             show_aging: cfg.show_aging,
-
-            record_frames: false,
-            frame_buffer: Vec::new(),
-
-            pop_history: Vec::new(),
 
             show_run_n_dialog: false,
             run_n_input: "100".into(),
+            run_n_total: 0,
+            run_n_pending: 0,
             show_resize_dialog: false,
             resize_w_input: "100".into(),
             resize_h_input: "100".into(),
 
             last_frame_time: Instant::now(),
             fps: 0.0,
+            gen_rate: 0.0,
+            gen_sample_time: Instant::now(),
+            gen_sample_generation: 0,
 
             status_msg: None,
 
@@ -324,109 +266,59 @@ impl LifeGridApp {
         }
     }
 
-    // ── Factory ─────────────────────────────────────────────────────────────
-
-    fn make_auto(
-        mode: &str,
-        w: usize,
-        h: usize,
-        boundary: BoundaryMode,
-        birth: &[u8],
-        survival: &[u8],
-    ) -> Box<dyn Automaton> {
-        let mut auto: Box<dyn Automaton> = if mode == "Custom Rules" {
-            Box::new(LifeLike::new(w, h, birth.to_vec(), survival.to_vec()))
-        } else {
-            automata::make_automaton(mode, w, h)
-        };
-        auto.set_boundary(boundary);
-        auto
-    }
-
     // ── Simulation helpers ───────────────────────────────────────────────────
 
     fn step_duration(&self) -> Duration {
-        Duration::from_millis(1000 / self.speed.max(1) as u64)
+        Duration::from_secs_f64(1.0 / self.speed.max(1) as f64)
     }
 
     fn do_step(&mut self) {
-        self.automaton.step();
-        self.generation += 1;
-
-        // Snapshot cells before any further borrows.
-        let (n, pop, cells) = {
-            let g = self.automaton.get_grid();
-            (g.cells.len(), g.population(), g.cells.clone())
-        };
-
-        // Update age grid.
-        if self.age_grid.len() != n {
-            self.age_grid = vec![0u32; n];
-        }
-        for (i, &state) in cells.iter().enumerate() {
-            self.age_grid[i] = if state != 0 {
-                self.age_grid[i].saturating_add(1)
-            } else {
-                0
-            };
-        }
-
-        self.pop_history.push(pop);
-        if self.pop_history.len() > 500 {
-            self.pop_history.remove(0);
-        }
-
-        // GIF frame recording.
-        if self.record_frames {
-            self.frame_buffer.push(cells);
-            if self.frame_buffer.len() > 500 {
-                self.frame_buffer.remove(0);
-            }
-        }
+        self.sim.step();
     }
 
     fn do_reset(&mut self) {
-        self.automaton.reset();
-        self.generation = 0;
-        self.pop_history.clear();
+        self.push_undo();
+        self.sim.reset();
         self.running = false;
-        let n = self.automaton.get_grid().cells.len();
-        self.age_grid = vec![0u32; n];
-        self.frame_buffer.clear();
     }
 
     fn rebuild_automaton(&mut self) {
-        let (w, h) = {
-            let g = self.automaton.get_grid();
-            (g.width, g.height)
-        };
-        let mut new_auto = Self::make_auto(
+        let (w, h) = (self.sim.width(), self.sim.height());
+        self.sim.rebuild(
             &self.selected_mode,
             w,
             h,
-            self.selected_boundary,
-            &self.custom_birth,
-            &self.custom_survival,
+            RuleSpec::new(
+                self.selected_boundary,
+                &self.custom_birth,
+                &self.custom_survival,
+            ),
+            &self.selected_pattern,
         );
-        let patterns = new_auto.available_patterns();
-        if !patterns.contains(&self.selected_pattern.as_str()) {
-            self.selected_pattern = patterns.first().copied().unwrap_or("").to_owned();
+        if !self
+            .sim
+            .available_patterns()
+            .contains(&self.selected_pattern.as_str())
+        {
+            self.selected_pattern = self
+                .sim
+                .available_patterns()
+                .first()
+                .copied()
+                .unwrap_or("")
+                .to_owned();
+            let pattern = self.selected_pattern.clone();
+            self.sim.load_pattern(&pattern);
         }
-        new_auto.load_pattern(&self.selected_pattern);
-        let n = new_auto.get_grid().cells.len();
-        self.automaton = new_auto;
-        self.generation = 0;
-        self.pop_history.clear();
         self.running = false;
-        self.undo.clear();
-        self.age_grid = vec![0u32; n];
-        self.frame_buffer.clear();
         self.viewport_offset = Vec2::ZERO;
+        self.selection = None;
+        self.selection_anchor = None;
+        self.paint_state = self.paint_state.min(self.sim.max_state()).max(1);
     }
 
     fn push_undo(&mut self) {
-        let snapshot = self.automaton.get_grid().cells.clone();
-        self.undo.push(snapshot);
+        self.sim.push_undo();
     }
 
     fn set_status(&mut self, msg: impl Into<String>) {
@@ -442,7 +334,7 @@ impl LifeGridApp {
             return;
         }
         let (gw, gh) = {
-            let g = self.automaton.get_grid();
+            let g = self.sim.grid();
             (g.width as f32, g.height as f32)
         };
         self.cell_size = (cw / gw).min(ch / gh).clamp(1.0, 64.0);
@@ -461,7 +353,7 @@ impl LifeGridApp {
             return;
         }
         let (gw, gh) = {
-            let g = self.automaton.get_grid();
+            let g = self.sim.grid();
             (g.width as f32, g.height as f32)
         };
         // Isometric screen extent: width ≈ (gw+gh)*cs/2, height ≈ (gw+gh)*cs/4 + height_margin
@@ -472,70 +364,6 @@ impl LifeGridApp {
         self.iso_offset = Vec2::ZERO;
     }
 
-    // ── RLE export ───────────────────────────────────────────────────────────
-
-    fn grid_to_rle(&self) -> String {
-        let grid = self.automaton.get_grid();
-        let w = grid.width;
-        let h = grid.height;
-        // Find bounding box of live cells.
-        let mut x0 = w;
-        let mut y0 = h;
-        let mut x1 = 0usize;
-        let mut y1 = 0usize;
-        let mut found = false;
-        for y in 0..h {
-            for x in 0..w {
-                if grid.get(y, x) != 0 {
-                    if !found {
-                        x0 = x;
-                        y0 = y;
-                        x1 = x;
-                        y1 = y;
-                        found = true;
-                    } else {
-                        x0 = x0.min(x);
-                        x1 = x1.max(x);
-                        y0 = y0.min(y);
-                        y1 = y1.max(y);
-                    }
-                }
-            }
-        }
-        if !found {
-            return "x = 0, y = 0, rule = B3/S23\n!".to_owned();
-        }
-        let rw = x1 - x0 + 1;
-        let rh = y1 - y0 + 1;
-        let mut out = format!("x = {}, y = {}, rule = B3/S23\n", rw, rh);
-        for y in y0..=y1 {
-            let mut runs: Vec<(char, u32)> = Vec::new();
-            for x in x0..=x1 {
-                let ch = if grid.get(y, x) != 0 { 'o' } else { 'b' };
-                if runs.last().map(|r| r.0) == Some(ch) {
-                    runs.last_mut().unwrap().1 += 1;
-                } else {
-                    runs.push((ch, 1));
-                }
-            }
-            // Omit trailing dead cells.
-            while matches!(runs.last(), Some(('b', _))) {
-                runs.pop();
-            }
-            for (ch, count) in &runs {
-                if *count > 1 {
-                    out.push_str(&count.to_string());
-                }
-                out.push(*ch);
-            }
-            if y < y1 {
-                out.push('$');
-            }
-        }
-        out.push('!');
-        out
-    }
-
     // ── Save / load grid state ───────────────────────────────────────────────
 
     fn save_state(&mut self) {
@@ -544,12 +372,12 @@ impl LifeGridApp {
             .save_file()
         {
             let (w, h, cells) = {
-                let g = self.automaton.get_grid();
+                let g = self.sim.grid();
                 (g.width, g.height, g.cells.clone())
             };
             let state = SavedState {
                 automaton: self.selected_mode.clone(),
-                generation: self.generation,
+                generation: self.sim.generation,
                 width: w,
                 height: h,
                 cells,
@@ -572,29 +400,33 @@ impl LifeGridApp {
             match std::fs::read_to_string(&path) {
                 Ok(text) => match serde_json::from_str::<SavedState>(&text) {
                     Ok(state) => {
-                        let mut new_auto = Self::make_auto(
+                        self.sim.rebuild(
                             &state.automaton,
                             state.width,
                             state.height,
-                            self.selected_boundary,
-                            &self.custom_birth,
-                            &self.custom_survival,
+                            RuleSpec::new(
+                                self.selected_boundary,
+                                &self.custom_birth,
+                                &self.custom_survival,
+                            ),
+                            "",
                         );
-                        let grid = new_auto.get_grid_mut();
-                        if grid.cells.len() == state.cells.len() {
-                            grid.cells = state.cells;
+                        if state.cells.len() == self.sim.grid().cells.len() {
+                            self.sim.set_cells(&state.cells);
                         }
-                        let n = new_auto.get_grid().cells.len();
-                        self.automaton = new_auto;
+                        self.sim.generation = state.generation;
                         self.selected_mode = state.automaton;
-                        self.generation = state.generation;
-                        self.pop_history.clear();
+                        self.selected_pattern = self
+                            .sim
+                            .available_patterns()
+                            .first()
+                            .copied()
+                            .unwrap_or("")
+                            .to_owned();
                         self.running = false;
-                        self.undo.clear();
-                        self.age_grid = vec![0u32; n];
-                        self.frame_buffer.clear();
                         self.viewport_offset = Vec2::ZERO;
                         self.selection = None;
+                        self.selection_anchor = None;
                         self.set_status(format!("Loaded {}", path.display()));
                     }
                     Err(e) => self.set_status(format!("Parse error: {e}")),
@@ -609,7 +441,7 @@ impl LifeGridApp {
     fn copy_selection(&mut self) {
         if let Some((x0, y0, x1, y1)) = self.selection {
             let (gw, gh) = {
-                let g = self.automaton.get_grid();
+                let g = self.sim.grid();
                 (g.width as i64, g.height as i64)
             };
             let x0c = x0.max(0) as usize;
@@ -622,7 +454,7 @@ impl LifeGridApp {
             let cw = x1c - x0c + 1;
             let ch = y1c - y0c + 1;
             let mut cells = vec![0u8; cw * ch];
-            let grid = self.automaton.get_grid();
+            let grid = self.sim.grid();
             for dy in 0..ch {
                 for dx in 0..cw {
                     cells[dy * cw + dx] = grid.get(y0c + dy, x0c + dx);
@@ -641,7 +473,7 @@ impl LifeGridApp {
     fn paste_clipboard(&mut self) {
         if let Some((cells, cw, ch)) = self.clipboard.clone() {
             let (gw, gh) = {
-                let g = self.automaton.get_grid();
+                let g = self.sim.grid();
                 (g.width, g.height)
             };
             let (px, py) = if let Some((x0, y0, _, _)) = self.selection {
@@ -650,16 +482,17 @@ impl LifeGridApp {
                 (gw.saturating_sub(cw) / 2, gh.saturating_sub(ch) / 2)
             };
             self.push_undo();
-            let grid = self.automaton.get_grid_mut();
-            for dy in 0..ch {
-                for dx in 0..cw {
-                    let gx = px + dx;
-                    let gy = py + dy;
-                    if gx < gw && gy < gh {
-                        grid.set(gy, gx, cells[dy * cw + dx]);
+            self.sim.edit_cells(|grid_cells| {
+                for dy in 0..ch {
+                    for dx in 0..cw {
+                        let gx = px + dx;
+                        let gy = py + dy;
+                        if gx < gw && gy < gh {
+                            grid_cells[gy * gw + gx] = cells[dy * cw + dx];
+                        }
                     }
                 }
-            }
+            });
             self.set_status(format!("Pasted {}×{} region", cw, ch));
         }
     }
@@ -667,7 +500,7 @@ impl LifeGridApp {
     fn clear_selection_cells(&mut self) {
         if let Some((x0, y0, x1, y1)) = self.selection {
             let (gw, gh) = {
-                let g = self.automaton.get_grid();
+                let g = self.sim.grid();
                 (g.width as i64, g.height as i64)
             };
             let x0c = x0.max(0) as usize;
@@ -675,12 +508,14 @@ impl LifeGridApp {
             let x1c = x1.min(gw - 1) as usize;
             let y1c = y1.min(gh - 1) as usize;
             self.push_undo();
-            let grid = self.automaton.get_grid_mut();
-            for y in y0c..=y1c {
-                for x in x0c..=x1c {
-                    grid.set(y, x, 0);
+            let width = self.sim.width();
+            self.sim.edit_cells(|grid_cells| {
+                for y in y0c..=y1c {
+                    for x in x0c..=x1c {
+                        grid_cells[y * width + x] = 0;
+                    }
                 }
-            }
+            });
             self.set_status("Selection cleared");
         }
     }
@@ -740,7 +575,7 @@ impl LifeGridApp {
     }
 
     fn save_config(&self) {
-        let grid = self.automaton.get_grid();
+        let grid = self.sim.grid();
         let cfg = AppConfig {
             grid_width: grid.width,
             grid_height: grid.height,
@@ -836,33 +671,26 @@ impl LifeGridApp {
             if i.key_pressed(egui::Key::R) {
                 self.do_reset();
                 let pat = self.selected_pattern.clone();
-                self.automaton.load_pattern(&pat);
+                self.sim.load_pattern(&pat);
             }
             if i.key_pressed(egui::Key::G) {
                 self.show_grid = !self.show_grid;
             }
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::Z) {
-                let current = self.automaton.get_grid().cells.clone();
-                if let Some(prev) = self.undo.undo(current) {
-                    self.automaton.get_grid_mut().cells = prev;
-                    if self.generation > 0 {
-                        self.generation -= 1;
-                    }
-                }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::Z) && self.sim.undo() {
+                self.running = false;
             }
             if i.modifiers.ctrl
                 && (i.key_pressed(egui::Key::Y)
                     || (i.modifiers.shift && i.key_pressed(egui::Key::Z)))
+                && self.sim.redo()
             {
-                let current = self.automaton.get_grid().cells.clone();
-                if let Some(next) = self.undo.redo(current) {
-                    self.automaton.get_grid_mut().cells = next;
-                    self.generation += 1;
-                }
+                self.running = false;
             }
             if i.modifiers.ctrl && i.key_pressed(egui::Key::S) {
-                // Export PNG via keyboard shortcut (non-blocking open below)
-                self.status_msg = Some(("Use Export PNG… button".into(), Instant::now()));
+                self.save_state();
+            }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::O) {
+                self.load_state();
             }
             // Zoom
             let plus = i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals);
@@ -969,37 +797,29 @@ impl LifeGridApp {
             if ui.button("Reset").on_hover_text("Reset (R)").clicked() {
                 self.do_reset();
                 let pat = self.selected_pattern.clone();
-                self.automaton.load_pattern(&pat);
+                self.sim.load_pattern(&pat);
             }
 
             ui.separator();
 
             // Undo / Redo
-            let can_undo = self.undo.can_undo();
-            let can_redo = self.undo.can_redo();
+            let can_undo = self.sim.can_undo();
+            let can_redo = self.sim.can_redo();
             if ui
                 .add_enabled(can_undo, egui::Button::new("Undo"))
                 .on_hover_text("Undo (Ctrl+Z)")
                 .clicked()
+                && self.sim.undo()
             {
-                let cur = self.automaton.get_grid().cells.clone();
-                if let Some(prev) = self.undo.undo(cur) {
-                    self.automaton.get_grid_mut().cells = prev;
-                    if self.generation > 0 {
-                        self.generation -= 1;
-                    }
-                }
+                self.running = false;
             }
             if ui
                 .add_enabled(can_redo, egui::Button::new("Redo"))
                 .on_hover_text("Redo (Ctrl+Y)")
                 .clicked()
+                && self.sim.redo()
             {
-                let cur = self.automaton.get_grid().cells.clone();
-                if let Some(next) = self.undo.redo(cur) {
-                    self.automaton.get_grid_mut().cells = next;
-                    self.generation += 1;
-                }
+                self.running = false;
             }
 
             ui.separator();
@@ -1110,28 +930,41 @@ impl LifeGridApp {
 
     fn ui_statusbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let (gw, gh, pop) = {
-                let g = self.automaton.get_grid();
-                (g.width, g.height, g.population())
-            };
-            let density = pop as f32 / (gw * gh).max(1) as f32 * 100.0;
+            let (gw, gh) = (self.sim.width(), self.sim.height());
+            let pop = self.sim.population();
+            let density = self.sim.density() * 100.0;
 
-            ui.label(egui::RichText::new(format!("Gen {}", self.generation)).strong());
+            ui.label(egui::RichText::new(format!("Gen {}", self.sim.generation)).strong());
             ui.separator();
-            ui.label(format!("Pop {}", pop));
+            ui.label(format!("Pop {pop}"));
             ui.separator();
-            ui.label(format!("Density {:.1}%", density));
+            ui.label(format!("Density {density:.1}%"));
             ui.separator();
-            ui.label(format!("FPS: {:.0}", self.fps));
+            ui.label(format!("{gw}×{gh}"));
+            ui.separator();
+            ui.label(format!("{:.0} gen/s", self.gen_rate));
+            ui.separator();
+            ui.colored_label(mode_accent_color(&self.selected_mode), &self.selected_mode);
 
-            // Timed status message
-            if let Some((ref msg, ts)) = self.status_msg.clone() {
-                if ts.elapsed() < Duration::from_secs(4) {
-                    ui.separator();
-                    ui.colored_label(Color32::from_rgb(100, 220, 100), msg);
-                } else {
-                    self.status_msg = None;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(format!("{:.0} fps", self.fps))
+                        .small()
+                        .weak(),
+                );
+                if let Some((msg, ts)) = &self.status_msg {
+                    if ts.elapsed() < Duration::from_secs(4) {
+                        ui.separator();
+                        ui.colored_label(Color32::from_rgb(100, 220, 100), msg);
+                    }
                 }
+            });
+            if self
+                .status_msg
+                .as_ref()
+                .is_some_and(|(_, ts)| ts.elapsed() >= Duration::from_secs(4))
+            {
+                self.status_msg = None;
             }
         });
     }
@@ -1232,6 +1065,35 @@ impl LifeGridApp {
             ui.add_space(4.0);
         }
 
+        // ── Mode info ────────────────────────────────────────────────────────
+        section_frame.show(ui, |ui| {
+            let accent = mode_accent_color(&self.selected_mode);
+            ui.horizontal(|ui| {
+                ui.colored_label(accent, "●");
+                ui.label(egui::RichText::new(self.sim.automaton_name()).strong());
+            });
+            ui.label(
+                egui::RichText::new(format!("Rule: {}", self.sim.rule_string()))
+                    .monospace()
+                    .small(),
+            );
+            if self.sim.supports_boundary() {
+                ui.label(
+                    egui::RichText::new(format!("Boundary: {}", self.sim.boundary().as_str()))
+                        .small(),
+                );
+            } else {
+                ui.label(egui::RichText::new("Boundary: fixed by mode").small());
+            }
+            ui.label(
+                egui::RichText::new(automata::description(&self.selected_mode))
+                    .small()
+                    .weak(),
+            );
+        });
+
+        ui.add_space(4.0);
+
         // ── Automaton section ────────────────────────────────────────────────
         section_frame.show(ui, |ui| {
             egui::CollapsingHeader::new("Automaton")
@@ -1254,7 +1116,7 @@ impl LifeGridApp {
 
                     // Pattern
                     ui.label("Pattern:");
-                    let patterns: Vec<&str> = self.automaton.available_patterns().to_vec();
+                    let patterns: Vec<&str> = self.sim.available_patterns().to_vec();
                     let old_pat = self.selected_pattern.clone();
                     egui::ComboBox::from_id_salt("pattern_combo")
                         .selected_text(&self.selected_pattern)
@@ -1267,23 +1129,27 @@ impl LifeGridApp {
                     if self.selected_pattern != old_pat {
                         self.do_reset();
                         let pat = self.selected_pattern.clone();
-                        self.automaton.load_pattern(&pat);
+                        self.sim.load_pattern(&pat);
                     }
 
                     // Boundary
                     ui.label("Boundary:");
-                    let old_bnd = self.selected_boundary;
-                    egui::ComboBox::from_id_salt("boundary_combo")
-                        .selected_text(self.selected_boundary.as_str())
-                        .width(ui.available_width() - 4.0)
-                        .show_ui(ui, |ui| {
-                            for &b in BoundaryMode::all() {
-                                ui.selectable_value(&mut self.selected_boundary, b, b.as_str());
-                            }
-                        });
-                    if self.selected_boundary != old_bnd {
-                        self.automaton.set_boundary(self.selected_boundary);
-                    }
+                    ui.add_enabled_ui(self.sim.supports_boundary(), |ui| {
+                        let old_bnd = self.selected_boundary;
+                        egui::ComboBox::from_id_salt("boundary_combo")
+                            .selected_text(self.selected_boundary.as_str())
+                            .width(ui.available_width() - 4.0)
+                            .show_ui(ui, |ui| {
+                                for &b in BoundaryMode::all() {
+                                    ui.selectable_value(&mut self.selected_boundary, b, b.as_str());
+                                }
+                            });
+                        if self.selected_boundary != old_bnd {
+                            self.sim.set_boundary(self.selected_boundary);
+                        }
+                    })
+                    .response
+                    .on_disabled_hover_text("This mode always wraps at the edges");
 
                     // Custom rule editor
                     if self.selected_mode == "Custom Rules" {
@@ -1308,7 +1174,7 @@ impl LifeGridApp {
                         .clicked()
                     {
                         let (gw, gh) = {
-                            let g = self.automaton.get_grid();
+                            let g = self.sim.grid();
                             (g.width, g.height)
                         };
                         self.resize_w_input = gw.to_string();
@@ -1327,27 +1193,36 @@ impl LifeGridApp {
                     {
                         match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
                             Ok(text) => {
-                                let pts = parse_rle(&text);
-                                if pts.is_empty() {
+                                let pattern = rle::parse(&text);
+                                if pattern.is_empty() {
                                     self.set_status("Clipboard: no valid RLE found");
                                 } else {
-                                    let (gw, gh) = {
-                                        let g = self.automaton.get_grid();
-                                        (g.width as i32, g.height as i32)
-                                    };
-                                    let cx = gw / 2;
-                                    let cy = gh / 2;
+                                    let (gw, gh) = (self.sim.width(), self.sim.height());
+                                    let max_state = self.sim.max_state();
                                     self.push_undo();
-                                    for (dx, dy) in pts {
-                                        let x = cx + dx;
-                                        let y = cy + dy;
-                                        if x >= 0 && x < gw && y >= 0 && y < gh {
-                                            self.automaton
-                                                .get_grid_mut()
-                                                .set(y as usize, x as usize, 1);
+                                    self.sim.edit_cells(|cells| {
+                                        for &(x, y, state) in &pattern.cells {
+                                            if x >= 0
+                                                && y >= 0
+                                                && (x as usize) < gw
+                                                && (y as usize) < gh
+                                            {
+                                                cells[y as usize * gw + x as usize] =
+                                                    state.min(max_state);
+                                            }
                                         }
-                                    }
-                                    self.set_status("RLE pattern imported");
+                                    });
+                                    self.set_status(format!(
+                                        "RLE imported: {}×{} ({}), rule {}",
+                                        pattern.width,
+                                        pattern.height,
+                                        if pattern.rule.is_some() {
+                                            "sized"
+                                        } else {
+                                            "inferred"
+                                        },
+                                        pattern.rule.as_deref().unwrap_or("none")
+                                    ));
                                 }
                             }
                             Err(e) => self.set_status(format!("Clipboard error: {e}")),
@@ -1363,8 +1238,8 @@ impl LifeGridApp {
                         .on_hover_text("Copy current grid as RLE to clipboard")
                         .clicked()
                     {
-                        let rle = self.grid_to_rle();
-                        match arboard::Clipboard::new().and_then(|mut c| c.set_text(rle)) {
+                        let encoded = rle::encode(self.sim.grid(), &self.sim.rule_string());
+                        match arboard::Clipboard::new().and_then(|mut c| c.set_text(encoded)) {
                             Ok(()) => self.set_status("RLE copied to clipboard"),
                             Err(e) => self.set_status(format!("Clipboard error: {e}")),
                         }
@@ -1408,9 +1283,11 @@ impl LifeGridApp {
                     }
 
                     ui.add_space(4.0);
-                    ui.label("Paint state:");
+                    let max_state = self.sim.max_state().max(1);
+                    self.paint_state = self.paint_state.clamp(1, max_state);
+                    ui.label(format!("Paint state (1–{max_state}):"));
                     ui.add(
-                        egui::Slider::new(&mut self.paint_state, 0..=8)
+                        egui::Slider::new(&mut self.paint_state, 1..=max_state)
                             .clamping(egui::SliderClamping::Always),
                     );
                     ui.label(
@@ -1428,11 +1305,18 @@ impl LifeGridApp {
             egui::CollapsingHeader::new("Statistics")
                 .default_open(true)
                 .show(ui, |ui| {
-                    if self.pop_history.len() > 1 {
-                        let max_pop = self.pop_history.iter().copied().max().unwrap_or(1).max(1);
-                        let min_pop = self.pop_history.iter().copied().min().unwrap_or(0);
-                        let avg_pop =
-                            self.pop_history.iter().sum::<usize>() / self.pop_history.len();
+                    if self.sim.pop_history().len() > 1 {
+                        let max_pop = self
+                            .sim
+                            .pop_history()
+                            .iter()
+                            .copied()
+                            .max()
+                            .unwrap_or(1)
+                            .max(1);
+                        let min_pop = self.sim.pop_history().iter().copied().min().unwrap_or(0);
+                        let avg_pop = self.sim.pop_history().iter().sum::<u64>()
+                            / self.sim.pop_history().len() as u64;
 
                         ui.label(format!(
                             "Peak: {}  Min: {}  Avg: {}",
@@ -1449,11 +1333,12 @@ impl LifeGridApp {
                             Color32::from_gray(240)
                         };
                         painter.rect_filled(rect, CornerRadius::same(3), bg);
-                        let n = self.pop_history.len();
+                        let n = self.sim.pop_history().len();
                         let step = rect.width() / n.max(2) as f32;
                         let accent = mode_accent_color(&self.selected_mode);
                         let pts: Vec<egui::Pos2> = self
-                            .pop_history
+                            .sim
+                            .pop_history()
                             .iter()
                             .enumerate()
                             .map(|(i, &p)| {
@@ -1471,7 +1356,7 @@ impl LifeGridApp {
                     }
 
                     if ui.small_button("Reset stats").clicked() {
-                        self.pop_history.clear();
+                        self.sim.clear_pop_history();
                     }
                 });
         });
@@ -1495,7 +1380,7 @@ impl LifeGridApp {
                             .save_file()
                         {
                             let cs = (self.cell_size as u32).max(1);
-                            match export::export_png(self.automaton.get_grid(), cs, &path) {
+                            match export::export_png(self.sim.grid(), cs, &path) {
                                 Ok(()) => self.set_status(format!("Saved {}", path.display())),
                                 Err(e) => self.set_status(format!("Export failed: {}", e)),
                             }
@@ -1525,19 +1410,20 @@ impl LifeGridApp {
 
                     ui.separator();
 
-                    ui.checkbox(&mut self.record_frames, "Record frames");
-                    if self.record_frames {
+                    ui.checkbox(&mut self.sim.record_frames, "Record frames");
+                    if self.sim.record_frames {
                         ui.label(
                             egui::RichText::new(format!(
-                                "{} frames buffered (max 500)",
-                                self.frame_buffer.len()
+                                "{} frames buffered ({:.1} MB)",
+                                self.sim.frame_count(),
+                                self.sim.frame_bytes() as f64 / (1024.0 * 1024.0)
                             ))
                             .small(),
                         );
                     }
                     if ui
                         .add_enabled(
-                            !self.frame_buffer.is_empty(),
+                            self.sim.frame_count() > 0,
                             egui::Button::new("Export GIF..."),
                         )
                         .clicked()
@@ -1546,16 +1432,13 @@ impl LifeGridApp {
                             .add_filter("GIF animation", &["gif"])
                             .save_file()
                         {
-                            let (gw, gh) = {
-                                let g = self.automaton.get_grid();
-                                (g.width, g.height)
-                            };
+                            let (gw, gh) = (self.sim.width(), self.sim.height());
                             let cs = (self.cell_size as u32).clamp(1, 8);
                             let delay = 1000 / self.speed.clamp(1, 30);
-                            match export::export_gif(&self.frame_buffer, gw, gh, cs, delay, &path) {
+                            match export::export_gif(self.sim.frames(), gw, gh, cs, delay, &path) {
                                 Ok(()) => self.set_status(format!(
                                     "GIF saved ({} frames)",
-                                    self.frame_buffer.len()
+                                    self.sim.frame_count()
                                 )),
                                 Err(e) => self.set_status(format!("GIF failed: {}", e)),
                             }
@@ -1563,12 +1446,12 @@ impl LifeGridApp {
                     }
                     if ui
                         .add_enabled(
-                            !self.frame_buffer.is_empty(),
+                            self.sim.frame_count() > 0,
                             egui::Button::new("Clear frames"),
                         )
                         .clicked()
                     {
-                        self.frame_buffer.clear();
+                        self.sim.clear_frames();
                         self.set_status("Frame buffer cleared");
                     }
                 });
@@ -1597,10 +1480,8 @@ impl LifeGridApp {
             CornerRadius::ZERO
         };
 
-        let (gw, gh, cells_snapshot, age_snapshot) = {
-            let g = self.automaton.get_grid();
-            (g.width, g.height, g.cells.clone(), self.age_grid.clone())
-        };
+        let (gw, gh, cells_snapshot, age_snapshot) = self.sim.render_snapshot();
+        let paint_state = self.paint_state.min(self.sim.max_state());
 
         // ── Mouse-wheel zoom ─────────────────────────────────────────────────
         if response.hovered() {
@@ -1751,11 +1632,7 @@ impl LifeGridApp {
                             self.push_undo();
                             self.drag_undo_pushed = true;
                         }
-                        self.automaton.get_grid_mut().set(
-                            gy_v as usize,
-                            gx as usize,
-                            self.paint_state,
-                        );
+                        self.sim.paint(gy_v as usize, gx as usize, paint_state);
                     }
                 }
             }
@@ -1770,9 +1647,7 @@ impl LifeGridApp {
                             self.push_undo();
                             self.drag_undo_pushed = true;
                         }
-                        self.automaton
-                            .get_grid_mut()
-                            .set(gy_v as usize, gx as usize, 0);
+                        self.sim.paint(gy_v as usize, gx as usize, 0);
                     }
                 }
             }
@@ -1836,10 +1711,8 @@ impl LifeGridApp {
         let iso_h = self.iso_height;
         let dark = self.dark_mode;
 
-        let (gw, gh, cells_snapshot, age_snapshot) = {
-            let g = self.automaton.get_grid();
-            (g.width, g.height, g.cells.clone(), self.age_grid.clone())
-        };
+        let (gw, gh, cells_snapshot, age_snapshot) = self.sim.render_snapshot();
+        let paint_state = self.paint_state.min(self.sim.max_state());
 
         // Isometric projection: world (wx, wy, wz) → screen.
         // Moving +wx → screen right+down; +wy → screen left+down; +wz → screen up.
@@ -2004,11 +1877,7 @@ impl LifeGridApp {
                             self.push_undo();
                             self.drag_undo_pushed = true;
                         }
-                        self.automaton.get_grid_mut().set(
-                            gy as usize,
-                            gx as usize,
-                            self.paint_state,
-                        );
+                        self.sim.paint(gy as usize, gx as usize, paint_state);
                     }
                 }
             }
@@ -2020,9 +1889,7 @@ impl LifeGridApp {
                             self.push_undo();
                             self.drag_undo_pushed = true;
                         }
-                        self.automaton
-                            .get_grid_mut()
-                            .set(gy as usize, gx as usize, 0);
+                        self.sim.paint(gy as usize, gx as usize, 0);
                     }
                 }
             }
@@ -2063,23 +1930,43 @@ impl LifeGridApp {
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label("Number of steps:");
-                ui.text_edit_singleline(&mut self.run_n_input);
-                ui.horizontal(|ui| {
-                    if ui.button("Run").clicked() {
-                        if let Ok(n) = self.run_n_input.trim().parse::<u64>() {
-                            let n = n.min(100_000);
-                            for _ in 0..n {
-                                self.do_step();
+                if self.run_n_pending > 0 {
+                    let progress = 1.0 - self.run_n_pending as f32 / self.run_n_total.max(1) as f32;
+                    ui.add(
+                        egui::ProgressBar::new(progress)
+                            .show_percentage()
+                            .desired_width(240.0),
+                    );
+                    ui.label(format!(
+                        "{} of {} steps remaining",
+                        self.run_n_pending, self.run_n_total
+                    ));
+                    if ui.button("Stop").clicked() {
+                        self.run_n_pending = 0;
+                        self.set_status("Run cancelled");
+                        self.show_run_n_dialog = false;
+                    }
+                } else {
+                    ui.label("Number of steps:");
+                    ui.text_edit_singleline(&mut self.run_n_input);
+                    ui.horizontal(|ui| {
+                        if ui.button("Run").clicked() {
+                            if let Ok(n) = self.run_n_input.trim().parse::<u64>() {
+                                if n > 0 {
+                                    self.push_undo();
+                                    self.run_n_total = n.min(1_000_000);
+                                    self.run_n_pending = self.run_n_total;
+                                    self.running = false;
+                                }
+                            } else {
+                                self.set_status("Enter a positive number of steps");
                             }
-                            self.set_status(format!("Ran {} steps", n));
                         }
-                        self.show_run_n_dialog = false;
-                    }
-                    if ui.button("Cancel").clicked() {
-                        self.show_run_n_dialog = false;
-                    }
-                });
+                        if ui.button("Cancel").clicked() {
+                            self.show_run_n_dialog = false;
+                        }
+                    });
+                }
             });
         if !open {
             self.show_run_n_dialog = false;
@@ -2119,23 +2006,18 @@ impl LifeGridApp {
                             .parse::<usize>()
                             .unwrap_or(100)
                             .clamp(10, 1000);
-                        let mut new_auto = Self::make_auto(
-                            &self.selected_mode,
+                        self.sim.resize(
                             w,
                             h,
-                            self.selected_boundary,
-                            &self.custom_birth,
-                            &self.custom_survival,
+                            RuleSpec::new(
+                                self.selected_boundary,
+                                &self.custom_birth,
+                                &self.custom_survival,
+                            ),
+                            false,
                         );
-                        new_auto.load_pattern(&self.selected_pattern);
-                        let n = new_auto.get_grid().cells.len();
-                        self.automaton = new_auto;
-                        self.generation = 0;
-                        self.pop_history.clear();
+                        self.sim.load_pattern(&self.selected_pattern);
                         self.running = false;
-                        self.undo.clear();
-                        self.age_grid = vec![0u32; n];
-                        self.frame_buffer.clear();
                         self.viewport_offset = Vec2::ZERO;
                         self.set_status(format!("Grid resized to {}×{}", w, h));
                         self.show_resize_dialog = false;
@@ -2169,15 +2051,48 @@ impl eframe::App for LifeGridApp {
 
         self.handle_keyboard(ctx);
 
-        // Simulation tick
+        // Simulation tick: fixed timestep with catch-up so fast speeds are real.
         if self.running {
-            let step_dur = self.step_duration();
+            let step_interval = self.step_duration();
             let now = Instant::now();
-            if now - self.last_step >= step_dur {
-                self.do_step();
+            let mut steps = 0;
+            while now.duration_since(self.last_step) >= step_interval && steps < MAX_STEPS_PER_FRAME
+            {
+                self.sim.step();
+                self.last_step += step_interval;
+                steps += 1;
+            }
+            // Drop the backlog instead of spiralling if we hit the cap.
+            if now.duration_since(self.last_step) >= step_interval {
                 self.last_step = now;
             }
-            ctx.request_repaint_after(step_dur);
+            ctx.request_repaint_after(step_interval);
+        }
+
+        // Run-N executes in short slices so the UI keeps repainting.
+        if self.run_n_pending > 0 {
+            let slice_start = Instant::now();
+            let done = self.sim.run_steps(self.run_n_pending, || {
+                slice_start.elapsed() >= Duration::from_millis(8)
+            });
+            self.run_n_pending -= done;
+            if self.run_n_pending > 0 {
+                ctx.request_repaint();
+            } else {
+                self.set_status(format!("Ran {} steps", self.run_n_total));
+            }
+        }
+
+        // Generation-rate sampling (half-second window).
+        let elapsed = now.duration_since(self.gen_sample_time).as_secs_f32();
+        if elapsed >= 0.5 {
+            let generations = self
+                .sim
+                .generation
+                .saturating_sub(self.gen_sample_generation);
+            self.gen_rate = generations as f32 / elapsed;
+            self.gen_sample_time = now;
+            self.gen_sample_generation = self.sim.generation;
         }
     }
 

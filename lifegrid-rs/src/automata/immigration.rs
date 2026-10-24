@@ -57,11 +57,6 @@ impl Automaton for ImmigrationGame {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, (v + 1) % 4);
-    }
-
     fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
         let w = self.grid.width;
@@ -107,5 +102,8 @@ impl Automaton for ImmigrationGame {
 
     fn set_boundary(&mut self, mode: BoundaryMode) {
         self.boundary = mode;
+    }
+    fn max_state(&self) -> u8 {
+        3
     }
 }

@@ -56,11 +56,6 @@ impl Automaton for RainbowGame {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, (v + 1) % 7);
-    }
-
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
         let mut rng = rand::rng();
@@ -81,5 +76,8 @@ impl Automaton for RainbowGame {
 
     fn set_boundary(&mut self, mode: BoundaryMode) {
         self.boundary = mode;
+    }
+    fn max_state(&self) -> u8 {
+        6
     }
 }

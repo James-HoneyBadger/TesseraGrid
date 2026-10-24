@@ -76,12 +76,6 @@ impl Automaton for LangtonsAnt {
         &mut self.base
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        self.ant_x = x;
-        self.ant_y = y;
-        self.sync_display();
-    }
-
     fn load_pattern(&mut self, _pattern: &str) {
         self.reset();
     }
@@ -95,4 +89,30 @@ impl Automaton for LangtonsAnt {
     }
 
     fn set_boundary(&mut self, _mode: BoundaryMode) {}
+    fn set_cells(&mut self, cells: &[u8]) {
+        if self.base.cells.len() == cells.len() {
+            self.base.cells.copy_from_slice(cells);
+            self.sync_display();
+        }
+    }
+
+    fn edit_cells(&mut self, edit: &mut dyn FnMut(&mut [u8])) {
+        edit(&mut self.base.cells);
+        self.sync_display();
+    }
+
+    fn paint(&mut self, y: usize, x: usize, state: u8) {
+        if y < self.base.height && x < self.base.width {
+            self.base.set(y, x, state.min(1));
+            self.sync_display();
+        }
+    }
+
+    fn rule_string(&self) -> String {
+        "LangtonsAnt".to_owned()
+    }
+
+    fn supports_boundary(&self) -> bool {
+        false
+    }
 }

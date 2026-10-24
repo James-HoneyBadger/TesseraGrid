@@ -6,4 +6,4 @@ pub mod undo;
 pub use boundary::BoundaryMode;
 pub use config::AppConfig;
 pub use grid::Grid;
-pub use undo::UndoManager;
+pub use undo::{Snapshot, UndoManager};

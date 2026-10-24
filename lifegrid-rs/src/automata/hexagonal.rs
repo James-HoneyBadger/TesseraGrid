@@ -83,11 +83,6 @@ impl Automaton for HexagonalLife {
         &mut self.grid
     }
 
-    fn handle_click(&mut self, x: usize, y: usize) {
-        let v = self.grid.get(y, x);
-        self.grid.set(y, x, 1 - v);
-    }
-
     fn load_pattern(&mut self, _pattern: &str) {
         self.grid.clear();
         let mut rng = rand::rng();
@@ -105,4 +100,11 @@ impl Automaton for HexagonalLife {
     }
 
     fn set_boundary(&mut self, _mode: BoundaryMode) {}
+    fn rule_string(&self) -> String {
+        "B2/S34H".to_owned()
+    }
+
+    fn supports_boundary(&self) -> bool {
+        false
+    }
 }
