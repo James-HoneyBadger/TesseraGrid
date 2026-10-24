@@ -126,9 +126,12 @@ impl LifeGridApp {
         ui.horizontal_wrapped(|ui| {
             let accent = mode_accent_color(&self.selected_mode);
 
-            // Coloured mode dot + title
-            ui.colored_label(accent, "●");
-            ui.label(egui::RichText::new("LifeGrid").strong().size(16.0));
+            ui.label(
+                egui::RichText::new("LifeGrid")
+                    .strong()
+                    .size(16.0)
+                    .color(accent),
+            );
             ui.separator();
 
             // Play / Pause

@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [5.1.0] — 2026-10-24
+
+### Added
+- Headless CLI (`--headless`, `--mode`, `--rule`, `--pattern`, `--steps`,
+  `--randomize`, `--seed`, `--png`, `--gif`, `--rle`, `--stats`, `--list-modes`).
+- Pattern gallery with search, thumbnails, and descriptions; `Empty` is now
+  available in every automaton.
+- Seeded **Randomize** (button, sidebar seed field, `N`) with reproducible soups
+  for every mode, including mode-specific densities.
+- Brush sizes 1–8 with interpolated strokes so fast drags leave no gaps.
+- Menu bar (File / Simulation / View / Help), About dialog, and a single
+  shortcut table shared by the help window.
+- Population chart with axes (egui_plot) and CSV export; full undo history now
+  tracks the generation counter.
+- RLE import/export from the menu and sidebar, with multi-state letters and
+  correct per-mode rule headers.
+- Persisted view mode, tool mode, brush size, isometric height, and panel width;
+  config schema versioning with range clamping and readable load errors.
+- `LIFEGRID_CONFIG_DIR` override plus proper macOS and Windows config paths.
+- Test suite: automaton rule fixtures, boundary maths, engine undo/resize/frame
+  caps, RLE and config round-trips, and end-to-end CLI export tests.
+
+### Changed
+- Upgraded `eframe`/`egui` 0.31 → 0.37 (`App::logic`/`App::ui`, `Panel`,
+  `global_style`, glow backend with persistence), `rand` 0.8 → 0.10,
+  `image` 0.25.10, `rayon` 1.12, `rfd` 0.17, `arboard` 3.7.
+- Minimum supported Rust version is now **1.95**, pinned by `rust-toolchain.toml`.
+- The simulation engine moved to `sim::Simulation` and is shared by the GUI and
+  CLI; `app.rs` split into `app/{canvas,panels,toolbar,statusbar,dialogs,theme}`.
+- Fit-to-window centers grids smaller than the viewport and respects the
+  isometric view; `Ctrl+0` resets zoom.
+- Paint state is clamped to each mode’s available states, and the boundary
+  control is disabled for modes that always wrap.
+- Run-N executes in short slices with a progress bar and cancel button instead of
+  freezing the window.
+- GIF buffering is bounded by total bytes (256 MB) rather than a fixed frame
+  count; recording reports its memory footprint.
+- CI and release workflows rewritten for Rust, including fmt, clippy
+  (`-D warnings`), a three-OS test matrix, and per-OS release binaries.
+
+### Fixed
+- Simulation speeds above ~60 steps/s were unreachable because only one step ran
+  per frame.
+- `Ctrl+S` was a dead stub; it now saves state, `Ctrl+O` loads, and `Ctrl+E`
+  exports PNG.
+- Painting in Langton’s Ant mode had no visible effect until the next step.
+- RLE exports always claimed `B3/S23` regardless of the active mode.
+- Undo did not restore the generation and missed several mutation paths.
+- Rainbow’s “Rainbow Mix” pattern was identical to random soup.
+- High Life’s wildcard match made the `Empty` option unavailable.
+- Panel width was persisted as a constant and never restored.
+- Light-theme contrast on the canvas and noisy hover tooltips at small cell sizes.
+
+### Removed
+- Python-era CI, PyPI publishing, the Docker publish workflow (no Dockerfile
+  existed), and the stale `.flake8`, `.pylintrc`, `.codecov.yml`, and
+  `.dockerignore` files.
+
 ## [5.0.0] — 2026-09-24
 
 ### Added

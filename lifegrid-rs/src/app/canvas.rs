@@ -56,6 +56,7 @@ impl LifeGridApp {
         let (rect, response) = ui.allocate_exact_size(avail, Sense::click_and_drag());
 
         self.canvas_rect = rect;
+        self.hover_cell = None;
         if std::mem::take(&mut self.pending_fit) {
             self.zoom_to_fit();
         }
@@ -146,7 +147,7 @@ impl LifeGridApp {
             }
         }
 
-        // ── Grid lines ───────────────────────────────────────────────────────
+        // ── Grid lines (clipped to the grid, not the whole viewport) ─────────
         if show_grid && cs >= 4.0 {
             let lc = if dark {
                 Color32::from_gray(50)
@@ -154,23 +155,33 @@ impl LifeGridApp {
                 Color32::from_gray(210)
             };
             let stroke = egui::Stroke::new(0.5_f32, lc);
+            let grid_left = rect.left() - vox;
+            let grid_top = rect.top() - voy;
+            let x0 = grid_left.max(rect.left());
+            let x1 = (grid_left + gw as f32 * cs).min(rect.right());
+            let y0 = grid_top.max(rect.top());
+            let y1 = (grid_top + gh as f32 * cs).min(rect.bottom());
+
             for gx in start_gx..=end_gx {
-                let px = rect.left() - vox + gx as f32 * cs;
+                let px = grid_left + gx as f32 * cs;
                 if px >= rect.left() - 1.0 && px <= rect.right() + 1.0 {
-                    painter.line_segment(
-                        [egui::pos2(px, rect.top()), egui::pos2(px, rect.bottom())],
-                        stroke,
-                    );
+                    painter.line_segment([egui::pos2(px, y0), egui::pos2(px, y1)], stroke);
                 }
             }
             for gy in start_gy..=end_gy {
-                let py = rect.top() - voy + gy as f32 * cs;
+                let py = grid_top + gy as f32 * cs;
                 if py >= rect.top() - 1.0 && py <= rect.bottom() + 1.0 {
-                    painter.line_segment(
-                        [egui::pos2(rect.left(), py), egui::pos2(rect.right(), py)],
-                        stroke,
-                    );
+                    painter.line_segment([egui::pos2(x0, py), egui::pos2(x1, py)], stroke);
                 }
+            }
+            // Outline so a grid smaller than the viewport is clearly bounded.
+            if x1 > x0 && y1 > y0 {
+                painter.rect_stroke(
+                    Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)),
+                    CornerRadius::ZERO,
+                    egui::Stroke::new(1.0_f32, lc),
+                    egui::StrokeKind::Inside,
+                );
             }
         }
 
@@ -195,11 +206,7 @@ impl LifeGridApp {
                     60,
                 );
                 painter.rect_filled(hover_rect, rounding, hl);
-                if cs >= 5.0 {
-                    response
-                        .clone()
-                        .on_hover_text(format!("({}, {})  state: {}", hx, hy, state));
-                }
+                self.hover_cell = Some((hx, hy, state));
             }
         }
 
@@ -292,6 +299,7 @@ impl LifeGridApp {
         let avail = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(avail, Sense::click_and_drag());
         self.canvas_rect = rect;
+        self.hover_cell = None;
         if std::mem::take(&mut self.pending_fit) {
             self.iso_fit();
         }
@@ -463,9 +471,7 @@ impl LifeGridApp {
                     ],
                     egui::Stroke::new(1.5_f32, accent),
                 ));
-                response
-                    .clone()
-                    .on_hover_text(format!("({}, {})  state: {}", hx, hy, state));
+                self.hover_cell = Some((hx, hy, state));
             }
         }
 

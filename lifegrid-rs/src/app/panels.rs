@@ -100,10 +100,11 @@ impl LifeGridApp {
         // ── Mode info ────────────────────────────────────────────────────────
         section_frame.show(ui, |ui| {
             let accent = mode_accent_color(&self.selected_mode);
-            ui.horizontal(|ui| {
-                ui.colored_label(accent, "●");
-                ui.label(egui::RichText::new(self.sim.automaton_name()).strong());
-            });
+            ui.label(
+                egui::RichText::new(self.sim.automaton_name())
+                    .strong()
+                    .color(accent),
+            );
             ui.label(
                 egui::RichText::new(format!("Rule: {}", self.sim.rule_string()))
                     .monospace()
@@ -301,11 +302,13 @@ impl LifeGridApp {
                     ui.add_space(4.0);
                     let max_state = self.sim.max_state().max(1);
                     self.paint_state = self.paint_state.clamp(1, max_state);
-                    ui.label(format!("Paint state (1–{max_state}):"));
-                    ui.add(
-                        egui::Slider::new(&mut self.paint_state, 1..=max_state)
-                            .clamping(egui::SliderClamping::Always),
-                    );
+                    if max_state > 1 {
+                        ui.label(format!("Paint state (1–{max_state}):"));
+                        ui.add(
+                            egui::Slider::new(&mut self.paint_state, 1..=max_state)
+                                .clamping(egui::SliderClamping::Always),
+                        );
+                    }
                     ui.label(format!(
                         "Brush size: {}×{}",
                         self.brush_size, self.brush_size
@@ -337,10 +340,14 @@ impl LifeGridApp {
                             "Now {current}   Peak {max_pop}   Min {min_pop}   Avg {avg_pop}"
                         ));
 
+                        let first_generation = self
+                            .sim
+                            .generation
+                            .saturating_sub(history.len().saturating_sub(1) as u64);
                         let points: Vec<[f64; 2]> = history
                             .iter()
                             .enumerate()
-                            .map(|(i, &pop)| [i as f64, pop as f64])
+                            .map(|(i, &pop)| [(first_generation + i as u64) as f64, pop as f64])
                             .collect();
                         egui_plot::Plot::new("population_plot")
                             .height(96.0)

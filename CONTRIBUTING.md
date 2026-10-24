@@ -8,11 +8,13 @@ Thanks for your interest in contributing! This guide covers setup, workflow, and
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) 1.75 or later
+- [Rust](https://rustup.rs/) **1.95 or newer** (pinned by
+  [`rust-toolchain.toml`](rust-toolchain.toml); the GUI stack requires it)
 - A C linker (`gcc` or `clang`)
-  - Debian/Ubuntu: `sudo apt-get install build-essential`
-  - macOS: Xcode Command Line Tools
-- A display server (X11 or Wayland on Linux) to run the GUI
+- Linux GUI headers: `sudo apt-get install libxkbcommon-dev libwayland-dev
+  libx11-dev libudev-dev libgl1-mesa-dev pkg-config build-essential`
+- macOS: Xcode Command Line Tools
+- A display server (X11 or Wayland) to run the GUI; the CLI runs headless
 
 ### Clone and Build
 
@@ -50,9 +52,9 @@ cargo build --release
 4. **Run checks** before submitting:
 
    ```bash
-   cargo test          # unit tests
-   cargo clippy        # lints
-   cargo fmt --check   # formatting
+   cargo fmt --all --check
+   cargo clippy --all-targets -- -D warnings
+   cargo test --all-targets
    ```
 
 5. **Open a pull request** against `master`.
@@ -68,13 +70,16 @@ cargo build --release
 
 ### Linting
 
-- Aim for zero warnings from `cargo clippy`.
+- CI fails on any warning: `cargo clippy --all-targets -- -D warnings`.
 - Use `#[allow(...)]` only with a comment explaining why the lint is suppressed.
 
 ### Tests
 
-- New automaton logic should include unit tests in the same file or a `tests/` submodule.
-- Run the full suite with `cargo test`.
+- Automaton rules go in `src/automata/tests.rs`; engine behaviour in the
+  `#[cfg(test)]` module of `src/sim.rs`; parsing/serialisation next to the code
+  (`rle.rs`, `core/undo.rs`, `core/config.rs`).
+- End-to-end CLI coverage lives in `tests/headless.rs` and runs the real binary.
+- Run everything with `cargo test --all-targets`.
 
 ### Safety
 
@@ -102,35 +107,43 @@ cargo build --release
 
    impl MyAutomaton {
        pub fn new(width: usize, height: usize) -> Self {
-           Self {
-               grid: Grid::new(width, height),
-               boundary: BoundaryMode::default(),
-           }
+           Self { grid: Grid::new(width, height), boundary: BoundaryMode::Wrap }
        }
    }
 
    impl Automaton for MyAutomaton {
        fn name(&self) -> &'static str { "My Automaton" }
-       fn step(&mut self) { /* implement rules */ }
+       fn step(&mut self) { /* implement rules via self.grid */ }
        fn reset(&mut self) { self.grid.clear(); }
        fn get_grid(&self) -> &Grid { &self.grid }
        fn get_grid_mut(&mut self) -> &mut Grid { &mut self.grid }
-       fn set_boundary(&mut self, b: BoundaryMode) { self.boundary = b; }
+       fn load_pattern(&mut self, pattern: &str) {
+           self.grid.clear();
+           if pattern == "Empty" { return; }
+           // otherwise fill a soup or a named pattern
+       }
+       fn available_patterns(&self) -> &'static [&'static str] {
+           &["Random Soup", "Empty"]
+       }
        fn boundary(&self) -> BoundaryMode { self.boundary }
-       fn handle_click(&mut self, x: usize, y: usize) {
-           let v = self.grid.get(y, x);
-           self.grid.set(y, x, if v == 0 { 1 } else { 0 });
-       }
-       fn available_patterns(&self) -> &'static [&'static str] { &["Random Soup"] }
-       fn load_pattern(&mut self, _pattern: &str) {
-           // load or randomise
-       }
+       fn set_boundary(&mut self, mode: BoundaryMode) { self.boundary = mode; }
+
+       // Optional metadata used by RLE export and the UI:
+       fn rule_string(&self) -> String { "B3/S23".to_owned() }
+       fn max_state(&self) -> u8 { 1 }
+       fn supports_boundary(&self) -> bool { true }
    }
    ```
 
-2. Add `pub mod <name>;` and `pub use <name>::MyAutomaton;` in `automata/mod.rs`.
-3. Add `"My Automaton"` to the `ALL_MODES` constant in `automata/mod.rs`.
-4. Add a match arm for it in the `make_automaton` factory in `automata/mod.rs`.
+   Grid mutation from the UI always goes through `set_cells`, `edit_cells`, and
+   `paint`. Override those only if the automaton keeps auxiliary state (see
+   `Langton's Ant`); the default implementations are correct for plain grids.
+
+2. Add `mod <name>;` and `pub use <name>::MyAutomaton;` in `automata/mod.rs`.
+3. Add the display name to `ALL_MODES`, a match arm in `make_automaton`, and a
+   short description in `description()`.
+4. Add a next-generation test in `src/automata/tests.rs` and make sure the
+   generic "Empty + deterministic randomize" test still passes.
 5. Update `README.md` and `CHANGELOG.md`.
 
 ---
@@ -139,11 +152,16 @@ cargo build --release
 
 | Path | Purpose |
 |------|---------|
-| `lifegrid-rs/src/app.rs` | egui application, UI panels, event loop |
-| `lifegrid-rs/src/automata/` | All automaton implementations + trait |
-| `lifegrid-rs/src/core/` | Grid, boundary, undo manager, app config |
-| `lifegrid-rs/src/patterns.rs` | Hardcoded Conway pattern point data |
-| `lifegrid-rs/src/export.rs` | PNG and GIF export |
+| `lifegrid-rs/src/main.rs` | CLI dispatch and GUI launch |
+| `lifegrid-rs/src/cli.rs` | Headless command-line interface |
+| `lifegrid-rs/src/app/` | egui state, canvas, panels, menus, dialogs, theme |
+| `lifegrid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
+| `lifegrid-rs/src/rle.rs` | RLE import/export |
+| `lifegrid-rs/src/automata/` | Automaton trait, implementations, rule tests |
+| `lifegrid-rs/src/core/` | Grid, boundary modes, undo manager, config |
+| `lifegrid-rs/src/export.rs` | PNG and GIF rendering |
+| `lifegrid-rs/src/patterns.rs` | Built-in Conway pattern data |
+| `lifegrid-rs/tests/` | End-to-end CLI tests |
 
 ---
 
@@ -162,9 +180,9 @@ Open a GitHub issue with:
 ## Pull Request Checklist
 
 - [ ] Branch is up to date with `master`
-- [ ] `cargo test` passes
-- [ ] `cargo clippy` produces no new warnings
-- [ ] `cargo fmt --check` passes
+- [ ] `cargo test --all-targets` passes
+- [ ] `cargo clippy --all-targets -- -D warnings` passes
+- [ ] `cargo fmt --all --check` passes
 - [ ] Documentation is updated where necessary
 - [ ] CHANGELOG.md is updated for user-facing changes
 

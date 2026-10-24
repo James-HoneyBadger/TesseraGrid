@@ -147,6 +147,7 @@ pub struct LifeGridApp {
 
     // ── Canvas rect (updated every frame, used for zoom-to-fit) ──────────────
     canvas_rect: egui::Rect,
+    hover_cell: Option<(i64, i64, u8)>,
 
     // ── Help & gallery modals ────────────────────────────────────────────────
     show_help: bool,
@@ -253,6 +254,7 @@ impl LifeGridApp {
             status_msg: config_warning.map(|msg| (msg, Instant::now())),
 
             canvas_rect: egui::Rect::ZERO,
+            hover_cell: None,
             show_help: false,
             show_gallery: false,
             show_about: false,
@@ -678,7 +680,8 @@ impl LifeGridApp {
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
         // Skip shortcuts when a text field is focused (e.g., custom rule input).
-        if ctx.egui_wants_keyboard_input() {
+        // Never steal keys from a focused widget (text edit or focused button).
+        if ctx.memory(|memory| memory.focused().is_some()) {
             return;
         }
         ctx.input(|i| {
@@ -907,16 +910,20 @@ impl eframe::App for LifeGridApp {
         // Controls side panel
         let panel_min_width = if self.compact_mode { 160.0 } else { 180.0 };
         let panel_default_width = if self.compact_mode { 188.0 } else { 220.0 };
+        let panel_target = self.panel_width.clamp(panel_min_width, 420.0);
         let panel = egui::Panel::left("controls")
             .resizable(true)
             .min_size(panel_min_width)
-            .default_size(self.panel_width.max(panel_default_width))
+            .max_size(420.0)
+            .default_size(panel_target.max(panel_default_width))
             .show(ui, |ui| {
+                // Bound child widgets so they cannot stretch the panel.
+                ui.set_max_width((panel_target - 20.0).max(120.0));
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     self.ui_controls(ui);
                 });
             });
-        self.panel_width = panel.response.rect.width();
+        self.panel_width = panel.response.rect.width().clamp(panel_min_width, 420.0);
 
         // Canvas
         egui::CentralPanel::default().show(ui, |ui| {

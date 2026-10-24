@@ -1,49 +1,71 @@
 # LifeGrid
 
+[![CI](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/ci.yml)
+[![Release](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/release.yml/badge.svg)](https://github.com/James-HoneyBadger/LifeGrid/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A fast, native cellular-automaton simulator built with **Rust** and **egui**.
 
-LifeGrid runs ten classic and custom automata in a single interactive window, with pattern loading, custom B/S rules, PNG/GIF export, undo/redo, and three boundary modes.
+LifeGrid runs ten classic and custom automata in one interactive window — with a
+pattern gallery, seeded random soups, custom B/S rules, an isometric 3-D view,
+RLE import/export, PNG/GIF capture, a live population chart, and a headless CLI
+for scripted runs.
 
 ---
 
 ## Features
 
-- **10 built-in automata modes**
-  - Conway's Game of Life
-  - High Life
-  - Hexagonal Life
-  - Immigration Game
-  - Rainbow Game
-  - Langton's Ant
-  - Wireworld
-  - Brian's Brain
-  - Generations
-  - Custom Rules (any Life-like B/S notation)
-- **Interactive canvas** – paint, erase, drag, zoom, and pan.
-- **Built-in pattern library** – classic Conway patterns (glider, blinker, glider gun, etc.) plus random soup.
-- **Custom rules** – type B/S strings such as `B36/S23` or `B2/S` and see the result immediately.
-- **Boundary modes** – wrap (toroidal), fixed (dead edges), and reflect (mirror edges).
-- **Export** – save a PNG snapshot or record up to 500 frames and export an animated GIF.
-- **Undo / redo** – 100-state history with `Ctrl+Z` / `Ctrl+Y`.
-- **Persistent config** – settings are saved to `~/.config/lifegrid/lifegrid_config.json`.
-- **Cross-platform** – runs on Linux, macOS, and Windows.
+- **10 automata** — Conway, High Life, Hexagonal Life, Immigration, Rainbow,
+  Langton's Ant, Wireworld, Brian's Brain, Generations, and any custom B/S rule.
+- **Direct manipulation** — paint with a 1–8 cell brush, interpolated strokes,
+  right-click erase, region select/copy/cut/paste, wheel zoom, middle-drag pan.
+- **Pattern gallery** — searchable list with thumbnails and descriptions for
+  every Conway pattern, plus `Empty` and seeded `Randomize` in every mode.
+- **Custom rules** — type strings such as `B36/S23` or `B2/S`; the rule is
+  applied on every keystroke.
+- **Boundary modes** — wrap (toroidal), fixed (dead edges), reflect (mirror).
+  Modes that ignore boundaries show the control disabled.
+- **Isometric 3-D view** — height-mapped blocks with adjustable block height.
+- **Aging overlay** — colour long-lived cells by age.
+- **RLE** — import from and copy to the clipboard; exports carry the correct
+  per-mode rule header and multi-state letters.
+- **Export** — PNG snapshot or animated GIF (frames buffered to a 256 MB budget).
+- **Undo / redo** — 100 snapshots covering every edit, including generation.
+- **Live statistics** — population chart with axes, peak/min/average, CSV export.
+- **Session state** — save/load `.lifegrid` JSON files; UI settings persist.
+- **Headless CLI** — drive the same engine from scripts and CI.
+- **Cross-platform** — Linux, macOS, and Windows.
 
 ---
 
 ## Screenshots
 
-<!-- TODO: add screenshots under `docs/screenshots/` -->
+| Main window | Isometric 3-D |
+|-------------|---------------|
+| ![Main window](docs/screenshots/main-window.png) | ![Isometric view](docs/screenshots/isometric-3d.png) |
+
+| Pattern gallery | Statistics |
+|-----------------|------------|
+| ![Pattern gallery](docs/screenshots/pattern-gallery.png) | ![Population chart](docs/screenshots/statistics.png) |
+
+![Keyboard shortcuts](docs/screenshots/shortcuts.png)
 
 ---
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) 1.75 or later
-- A C linker (`gcc` or `clang`)
-  - Debian/Ubuntu: `sudo apt-get install build-essential`
-  - macOS: Xcode Command Line Tools
-  - Windows: `rustup` usually installs the required MSVC or MinGW toolchain
-- A display server (X11 or Wayland on Linux) to show the GUI window
+- **Rust 1.95 or newer** (required by egui 0.36+). `rustup` installs it via
+  [rust-toolchain.toml](rust-toolchain.toml).
+- A C linker (`gcc` or `clang`).
+- A display server (X11 or Wayland) **only for the GUI**; the CLI is headless.
+- Linux build libraries:
+
+  ```bash
+  sudo apt-get install libxkbcommon-dev libwayland-dev libx11-dev \
+      libudev-dev libgl1-mesa-dev pkg-config build-essential
+  ```
+
+  macOS needs Xcode Command Line Tools; Windows needs the MSVC build tools.
 
 ---
 
@@ -55,75 +77,135 @@ cd LifeGrid
 ./run-simulation.sh
 ```
 
-Or, manually:
+Extra arguments are forwarded to the binary, so the same script runs headless
+jobs:
 
 ```bash
-cd LifeGrid/lifegrid-rs
+./run-simulation.sh --steps 250 --png growth.png --stats
+```
+
+Or work directly in the crate:
+
+```bash
+cd lifegrid-rs
 cargo run --release
+cargo build --release && ./target/release/lifegrid
 ```
 
 ---
 
-## Build Only
+## Headless CLI
+
+Any run with steps, exports, or `--headless` skips the GUI entirely — useful for
+servers, CI, and reproducible experiments.
+
+| Flag | Description |
+|------|-------------|
+| `--headless` | Never open a window |
+| `--mode <MODE>` | Automaton mode (see `--list-modes`) |
+| `--rule <B/S>` | Custom rule, e.g. `B36/S23`; implies Custom Rules |
+| `--pattern <NAME>` | Starting pattern (defaults to the mode's first) |
+| `--width`, `--height` | Grid size in cells |
+| `--boundary <wrap\|fixed\|reflect>` | Edge behaviour |
+| `--steps <N>` | Generations to simulate |
+| `--randomize` | Fill with a random soup |
+| `--seed <N>` | Seed for `--randomize` (implies it) |
+| `--png <PATH>` | Write a PNG snapshot |
+| `--gif <PATH>` | Record frames and write a GIF |
+| `--gif-fps <N>` | GIF frame rate (default 10) |
+| `--cell-size <N>` | Pixels per cell for PNG/GIF (default 4) |
+| `--rle <PATH>` | Write the final grid as RLE |
+| `--stats` | Print final statistics |
+| `--list-modes` | List modes and exit |
+
+Examples:
 
 ```bash
-cd LifeGrid/lifegrid-rs
-cargo build --release
-./target/release/lifegrid
+# Reproducible High Life run with PNG + GIF + RLE output
+cargo run --release -- --rule B36/S23 --randomize --seed 42 \
+    --steps 300 --png highlife.png --gif highlife.gif --rle highlife.rle
+
+# Conway glider gun captured as a GIF
+cargo run --release -- --pattern "Glider Gun" --steps 120 --gif gun.gif
+
+# Machine-readable summary for scripts
+cargo run --release -- --steps 100 --stats
 ```
 
 ---
 
 ## Usage
 
-### Keyboard & Mouse
+### Mouse
 
 | Action | Input |
 |--------|-------|
-| Toggle / paint cell | Left-click on canvas |
-| Erase cell | Right-click on canvas |
-| Draw multiple cells | Click and drag |
-| Play / Pause | `Space` or ▶/⏸ toolbar button |
-| Single step | `S` or ⏭ toolbar button |
-| Reset | `R` or ⏹ toolbar button |
+| Paint | Left-click / drag (respects brush size and paint state) |
+| Erase | Right-click / drag |
+| Zoom | Mouse wheel (centred on the cursor) |
+| Pan | Middle-click drag, or arrow keys |
+| Select a region | Select tool, then left-drag |
+| Clear selection | Right-click (Select tool) |
+
+### Keyboard
+
+| Action | Shortcut |
+|--------|----------|
+| Play / pause | `Space` |
+| Step one generation | `S` |
+| Reset to selected pattern | `R` |
+| Randomize (current seed) | `N` |
 | Toggle grid lines | `G` |
-| Undo | `Ctrl+Z` or ↩ toolbar button |
-| Redo | `Ctrl+Y` or ↪ toolbar button |
+| Zoom to fit | `F` or `Ctrl+0` |
+| Toggle isometric 3-D | `V` |
 | Zoom in / out | `+` / `-` |
+| Undo | `Ctrl+Z` |
+| Redo | `Ctrl+Y` or `Ctrl+Shift+Z` |
+| Copy / cut / paste selection | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Clear selected cells | `Delete` |
+| Deselect | `Escape` |
+| Save / open state | `Ctrl+S` / `Ctrl+O` |
+| Export PNG | `Ctrl+E` |
+| Shortcut reference | `H` or `F1` |
 
-### Custom Rules
+### Custom rules
 
-Select **Custom Rules** from the mode dropdown and type a rule string in B/S notation into the text field, for example:
+Choose **Custom Rules** and type B/S notation, for example:
 
-- `B36/S23` – HighLife
-- `B2/S` – Seeds
-- `B3/S23` – Conway's Game of Life
+- `B36/S23` — High Life
+- `B2/S` — Seeds
+- `B3/S23` — Conway's Game of Life
 
-The automaton rebuilds immediately on each keystroke.
+### Saving and exporting
 
-### Exporting
-
-Open the 💾 **Export** panel in the sidebar:
-
-- **Export PNG…** – saves the current grid at the current cell size.
-- **Record frames** – tick the checkbox before running to buffer up to 500 frames, then click **Export GIF…** to save an animated GIF.
+- **State files** (`.lifegrid`) are JSON containing the mode, generation, size,
+  and cell buffer; they load across versions.
+- **RLE** uses standard Golly/LifeWiki syntax and carries the active rule in the
+  header (`B36/S23`, `B2/S34H`, `WireWorld`, …).
+- **GIF** recording keeps the newest frames within a 256 MB budget so long runs
+  cannot exhaust memory.
+- **Configuration** is stored at:
+  - Linux: `$XDG_CONFIG_HOME/lifegrid/` or `~/.config/lifegrid/`
+  - macOS: `~/Library/Application Support/lifegrid/`
+  - Windows: `%APPDATA%\lifegrid\`
+  - Override the directory with `LIFEGRID_CONFIG_DIR`.
 
 ---
 
 ## Supported Automata
 
-| Mode | Description |
-|------|-------------|
-| **Conway's Game of Life** | Classic B3/S23 Life on a square grid. |
-| **High Life** | B36/S23 variant with the replicator. |
-| **Hexagonal Life** | B2/S34 on an offset-coordinate hexagonal grid. |
-| **Immigration Game** | Two-colour Conway variant; new cells inherit the majority colour. |
-| **Rainbow Game** | Six-colour cyclic cellular automaton. |
-| **Langton's Ant** | Single ant on a binary grid that turns, flips cells, and moves. |
-| **Wireworld** | Four-state cellular automaton for electronic logic circuits. |
-| **Brian's Brain** | Three states: off, firing, refractory. |
-| **Generations** | Life-like birth/survival with N fading states. |
-| **Custom Rules** | Any Life-like rule via B/S notation. |
+| Mode | Rule | Boundary control |
+|------|------|------------------|
+| Conway's Game of Life | `B3/S23` | wrap / fixed / reflect |
+| High Life | `B36/S23` | wrap / fixed / reflect |
+| Hexagonal Life | `B2/S34H` (odd-r hex) | fixed (wraps) |
+| Immigration Game | two-colour `B3/S23` | wrap / fixed / reflect |
+| Rainbow Game | six-colour cyclic Life | wrap / fixed / reflect |
+| Langton's Ant | `LangtonsAnt` | fixed (wraps) |
+| Wireworld | `WireWorld` | wrap / fixed / reflect |
+| Brian's Brain | `Brian'sBrain` | wrap / fixed / reflect |
+| Generations | `B3/S23/C8` | wrap / fixed / reflect |
+| Custom Rules | any `B…/S…` | wrap / fixed / reflect |
 
 ---
 
@@ -131,34 +213,28 @@ Open the 💾 **Export** panel in the sidebar:
 
 ```text
 LifeGrid/
-├── lifegrid-rs/              # Rust application
+├── lifegrid-rs/
 │   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs           # Entry point
-│       ├── app.rs            # egui application, UI, and event loop
-│       ├── patterns.rs       # Hard-coded Conway pattern data
-│       ├── export.rs         # PNG and GIF export
-│       ├── automata/         # All 10 automaton implementations
-│       │   ├── mod.rs        # Automaton trait + factory
-│       │   ├── conway.rs
-│       │   ├── highlife.rs
-│       │   ├── lifelike.rs
-│       │   ├── ant.rs
-│       │   ├── briansbrain.rs
-│       │   ├── wireworld.rs
-│       │   ├── generations.rs
-│       │   ├── immigration.rs
-│       │   ├── rainbow.rs
-│       │   └── hexagonal.rs
-│       └── core/             # Grid, boundary, undo, and config
-│           ├── mod.rs
-│           ├── grid.rs
-│           ├── boundary.rs
-│           ├── undo.rs
-│           └── config.rs
-├── run-simulation.sh         # One-command build & run script
-├── LICENSE
-├── README.md
+│   ├── src/
+│   │   ├── main.rs          # CLI dispatch + GUI launch
+│   │   ├── cli.rs           # headless command line
+│   │   ├── app/             # egui layer (no engine logic)
+│   │   │   ├── mod.rs       # app state, helpers, eframe::App
+│   │   │   ├── canvas.rs    # 2-D and isometric rendering/painting
+│   │   │   ├── panels.rs    # sidebar controls
+│   │   │   ├── toolbar.rs   # menu bar and toolbar
+│   │   │   ├── dialogs.rs   # help, gallery, run-n, resize, about
+│   │   │   ├── statusbar.rs
+│   │   │   └── theme.rs
+│   │   ├── sim.rs           # headless simulation controller
+│   │   ├── rle.rs           # RLE parser/encoder
+│   │   ├── patterns.rs      # built-in Conway patterns
+│   │   ├── export.rs        # PNG and GIF rendering
+│   │   ├── automata/        # 10 automata behind one trait + tests
+│   │   └── core/            # grid, boundary, undo, config
+│   └── tests/headless.rs    # end-to-end CLI tests
+├── .github/workflows/       # CI and release pipelines
+├── run-simulation.sh
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── CODE_OF_CONDUCT.md
@@ -166,21 +242,37 @@ LifeGrid/
 
 ---
 
+## Development
+
+```bash
+cd lifegrid-rs
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
+```
+
+Unit tests live next to the code (`src/automata/tests.rs`, `src/sim.rs`,
+`src/rle.rs`, `src/core/undo.rs`, `src/core/config.rs`), while
+`tests/headless.rs` runs the real binary end to end.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+
+---
+
 ## Roadmap
 
-- [ ] RLE pattern import / export
-- [ ] Headless CLI mode
-- [ ] Plugin / custom automaton loading at runtime
 - [ ] GPU-accelerated grid stepping
-- [ ] Activity heatmaps and statistics panels
+- [ ] Runtime plugin loading for custom automata
+- [ ] In-app pattern editor and RLE multistate authoring
+- [ ] Timeline scrubber over recorded history
+- [ ] MP4/WebM export
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, workflow, and code standards.
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -10,4 +10,6 @@ if [[ ! -f "$APP_DIR/Cargo.toml" ]]; then
 fi
 
 cd "$APP_DIR"
-cargo run --release
+# Launch the GUI, or pass CLI flags through for headless runs, e.g.:
+#   ./run-simulation.sh --steps 100 --png out.png
+cargo run --release -- "$@"

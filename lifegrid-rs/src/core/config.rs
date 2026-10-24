@@ -130,7 +130,7 @@ impl AppConfig {
         self.grid_height = self.grid_height.clamp(10, 1000);
         self.cell_size = self.cell_size.clamp(1.0, 64.0);
         self.speed = self.speed.clamp(1, 200);
-        self.panel_width = self.panel_width.clamp(160.0, 600.0);
+        self.panel_width = self.panel_width.clamp(160.0, 420.0);
         self.paint_state = self.paint_state.clamp(1, 24);
         self.brush_size = self.brush_size.clamp(1, 8);
         self.iso_height = self.iso_height.clamp(0.25, 4.0);

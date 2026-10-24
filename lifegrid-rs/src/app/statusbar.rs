@@ -18,6 +18,10 @@ impl LifeGridApp {
             ui.label(format!("{:.0} gen/s", self.gen_rate));
             ui.separator();
             ui.colored_label(mode_accent_color(&self.selected_mode), &self.selected_mode);
+            if let Some((x, y, state)) = self.hover_cell {
+                ui.separator();
+                ui.label(format!("Cell ({x}, {y}) · state {state}"));
+            }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(

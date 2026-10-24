@@ -148,7 +148,7 @@ impl LifeGridApp {
             return;
         }
         let mut open = true;
-        egui::Window::new("\u{2328}  Keyboard Shortcuts")
+        egui::Window::new("Keyboard Shortcuts")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
