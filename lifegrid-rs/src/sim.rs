@@ -123,6 +123,10 @@ impl Simulation {
         self.population() as f32 / (self.width() * self.height()).max(1) as f32
     }
 
+    pub fn mode(&self) -> &str {
+        &self.mode
+    }
+
     pub fn automaton_name(&self) -> &'static str {
         self.automaton.name()
     }
@@ -401,5 +405,96 @@ impl Simulation {
     pub fn clear_frames(&mut self) {
         self.frame_buffer.clear();
         self.frame_bytes = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sim(mode: &str) -> Simulation {
+        Simulation::new(
+            mode,
+            20,
+            20,
+            RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+            "Empty",
+        )
+    }
+
+    #[test]
+    fn randomize_is_deterministic() {
+        let mut a = sim("Conway's Game of Life");
+        let mut b = sim("Conway's Game of Life");
+        a.randomize(7);
+        b.randomize(7);
+        assert_eq!(a.grid().cells, b.grid().cells);
+        b.randomize(8);
+        assert_ne!(a.grid().cells, b.grid().cells);
+    }
+
+    #[test]
+    fn undo_restores_cells_and_generation() {
+        let mut s = sim("Conway's Game of Life");
+        s.paint(1, 1, 1);
+        s.push_undo();
+        s.paint(2, 2, 1);
+        s.step();
+        let after_step = s.grid().cells.clone();
+        assert_eq!(s.generation, 1);
+
+        assert!(s.undo());
+        assert_eq!(s.generation, 0);
+        assert_eq!(s.grid().get(2, 2), 0);
+
+        assert!(s.redo());
+        assert_eq!(s.grid().cells, after_step);
+        assert_eq!(s.generation, 1);
+    }
+
+    #[test]
+    fn resize_preserves_overlapping_cells() {
+        let mut s = sim("Conway's Game of Life");
+        s.paint(1, 1, 1);
+        s.resize(
+            30,
+            30,
+            RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+            true,
+        );
+        assert_eq!(s.grid().width, 30);
+        assert_eq!(s.grid().height, 30);
+        assert_eq!(s.grid().get(1, 1), 1);
+        assert_eq!(s.generation, 0);
+    }
+
+    #[test]
+    fn run_steps_can_be_cancelled() {
+        let mut s = sim("Conway's Game of Life");
+        assert_eq!(s.run_steps(100, || true), 0);
+        assert_eq!(s.generation, 0);
+        assert_eq!(s.run_steps(5, || false), 5);
+        assert_eq!(s.generation, 5);
+    }
+
+    #[test]
+    fn frame_buffer_is_byte_capped() {
+        let mut s = sim("Conway's Game of Life");
+        s.max_frame_bytes = 400; // exactly one 20x20 frame
+        s.record_frames = true;
+        for _ in 0..5 {
+            s.step();
+        }
+        assert_eq!(s.frame_count(), 1);
+        assert!(s.frame_bytes() <= s.max_frame_bytes);
+    }
+
+    #[test]
+    fn population_history_is_capped() {
+        let mut s = sim("Conway's Game of Life");
+        for _ in 0..(POP_HISTORY + 10) {
+            s.step();
+        }
+        assert_eq!(s.pop_history().len(), POP_HISTORY);
     }
 }

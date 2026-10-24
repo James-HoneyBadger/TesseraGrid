@@ -9,6 +9,9 @@ pub mod lifelike;
 pub mod rainbow;
 pub mod wireworld;
 
+#[cfg(test)]
+mod tests;
+
 pub use ant::LangtonsAnt;
 pub use briansbrain::BriansBrain;
 pub use conway::ConwayLife;

@@ -135,7 +135,11 @@ pub fn encode(grid: &Grid, rule: &str) -> String {
             continue;
         }
         if pending_empty_rows > 0 {
-            tokens.push(format!("{pending_empty_rows}$"));
+            tokens.push(if pending_empty_rows == 1 {
+                "$".to_owned()
+            } else {
+                format!("{pending_empty_rows}$")
+            });
             pending_empty_rows = 0;
         }
         for (state, count) in runs {
