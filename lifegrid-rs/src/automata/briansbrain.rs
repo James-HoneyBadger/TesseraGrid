@@ -48,8 +48,11 @@ impl Automaton for BriansBrain {
         &mut self.grid
     }
 
-    fn load_pattern(&mut self, _pattern: &str) {
+    fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
+        if pattern == "Empty" {
+            return;
+        }
         let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
             *cell = u8::from(rng.random::<f32>() < 0.08);
@@ -57,7 +60,7 @@ impl Automaton for BriansBrain {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Random Soup"]
+        &["Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {
@@ -73,5 +76,12 @@ impl Automaton for BriansBrain {
 
     fn max_state(&self) -> u8 {
         2
+    }
+    fn randomize(&mut self, seed: u64) {
+        use rand::{RngExt, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        for cell in self.grid.cells.iter_mut() {
+            *cell = u8::from(rng.random::<f32>() < 0.08);
+        }
     }
 }

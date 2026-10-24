@@ -57,8 +57,11 @@ impl Automaton for Wireworld {
         &mut self.grid
     }
 
-    fn load_pattern(&mut self, _pattern: &str) {
+    fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
+        if pattern == "Empty" {
+            return;
+        }
         let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
             let r: f32 = rng.random();
@@ -73,7 +76,7 @@ impl Automaton for Wireworld {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Random Soup"]
+        &["Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {
@@ -89,5 +92,22 @@ impl Automaton for Wireworld {
 
     fn max_state(&self) -> u8 {
         3
+    }
+    fn randomize(&mut self, seed: u64) {
+        use rand::{RngExt, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let cells: Vec<u8> = (0..self.grid.cells.len())
+            .map(|_| {
+                let r: f32 = rng.random();
+                if r < 0.02 {
+                    1
+                } else if r < 0.12 {
+                    3
+                } else {
+                    0
+                }
+            })
+            .collect();
+        self.grid.cells = cells;
     }
 }

@@ -56,9 +56,26 @@ impl Automaton for RainbowGame {
         &mut self.grid
     }
 
-    fn load_pattern(&mut self, _pattern: &str) {
+    fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
+        if pattern == "Empty" {
+            return;
+        }
         let mut rng = rand::rng();
+        if pattern == "Rainbow Mix" {
+            // Concentric colour bands give the cyclic rule something to work with.
+            let w = self.grid.width;
+            let h = self.grid.height;
+            for y in 0..h {
+                for x in 0..w {
+                    let dx = x as i32 - w as i32 / 2;
+                    let dy = y as i32 - h as i32 / 2;
+                    let ring = ((dx.abs() + dy.abs()) / 4) % 6 + 1;
+                    self.grid.set(y, x, ring as u8);
+                }
+            }
+            return;
+        }
         for cell in self.grid.cells.iter_mut() {
             if rng.random::<f32>() < 0.15 {
                 *cell = rng.random_range(1..=6);
@@ -67,7 +84,7 @@ impl Automaton for RainbowGame {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Rainbow Mix", "Random Soup"]
+        &["Rainbow Mix", "Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {

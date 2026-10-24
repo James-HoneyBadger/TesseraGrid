@@ -65,6 +65,7 @@ impl Automaton for ImmigrationGame {
         let cy = (h / 2) as i32;
 
         match pattern {
+            "Empty" => {}
             "Color Mix" => {
                 for &(dx, dy) in &[(1i32, 0), (2, 1), (0, 2), (1, 2), (2, 2)] {
                     let x = cx - 20 + dx;
@@ -93,7 +94,7 @@ impl Automaton for ImmigrationGame {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Color Mix", "Random Soup"]
+        &["Color Mix", "Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {

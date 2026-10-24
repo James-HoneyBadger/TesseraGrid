@@ -2,7 +2,6 @@
 pub struct PatternDef {
     pub name: &'static str,
     pub points: &'static [(i32, i32)],
-    #[allow(dead_code)]
     pub description: &'static str,
 }
 
@@ -23,6 +22,7 @@ pub const CONWAY_PATTERN_NAMES: &[&str] = &[
     "R-Pentomino",
     "Pulsar",
     "Random Soup",
+    "Empty",
 ];
 
 /// Return the coordinate offsets for a named Conway pattern, or `None`.
@@ -31,6 +31,14 @@ pub fn conway_pattern_points(name: &str) -> Option<&'static [(i32, i32)]> {
         .iter()
         .find(|p| p.name == name)
         .map(|p| p.points)
+}
+
+/// Description for a named Conway pattern.
+pub fn conway_pattern_description(name: &str) -> Option<&'static str> {
+    CONWAY_PATTERNS
+        .iter()
+        .find(|p| p.name == name)
+        .map(|p| p.description)
 }
 
 static CONWAY_PATTERNS: &[PatternDef] = &[

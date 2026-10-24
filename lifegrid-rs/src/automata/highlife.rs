@@ -57,6 +57,7 @@ impl Automaton for HighLife {
         let cx = w / 2;
         let cy = h / 2;
         match pattern {
+            "Empty" => {}
             "Replicator" => {
                 for &(dx, dy) in &[(1i32, 0), (0, 1), (1, 1), (2, 1), (0, 2), (2, 2), (1, 3)] {
                     let x = cx as i32 + dx - 1;
@@ -76,7 +77,7 @@ impl Automaton for HighLife {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Replicator", "Random Soup"]
+        &["Replicator", "Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {

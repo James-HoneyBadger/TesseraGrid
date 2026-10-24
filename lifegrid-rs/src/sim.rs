@@ -260,6 +260,16 @@ impl Simulation {
         }
     }
 
+    /// Fill the grid deterministically from `seed` and reset derived state.
+    pub fn randomize(&mut self, seed: u64) {
+        self.automaton.randomize(seed);
+        self.generation = 0;
+        self.age_grid = vec![0; self.grid().cells.len()];
+        self.pop_history.clear();
+        self.frame_buffer.clear();
+        self.frame_bytes = 0;
+    }
+
     pub fn load_pattern(&mut self, pattern: &str) {
         self.automaton.load_pattern(pattern);
         self.age_grid = vec![0; self.grid().cells.len()];

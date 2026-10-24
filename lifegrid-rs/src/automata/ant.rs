@@ -115,4 +115,7 @@ impl Automaton for LangtonsAnt {
     fn supports_boundary(&self) -> bool {
         false
     }
+    fn randomize(&mut self, _seed: u64) {
+        self.reset();
+    }
 }

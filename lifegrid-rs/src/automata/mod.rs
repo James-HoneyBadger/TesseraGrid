@@ -59,6 +59,25 @@ pub trait Automaton {
         true
     }
 
+    /// Fill the grid with a reproducible pseudo-random population.
+    fn randomize(&mut self, seed: u64) {
+        use rand::{RngExt, SeedableRng};
+        let max_state = self.max_state().max(1);
+        let width = self.get_grid().width;
+        let height = self.get_grid().height;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let cells: Vec<u8> = (0..width * height)
+            .map(|_| {
+                if rng.random::<f32>() < 0.15 {
+                    rng.random_range(1..=max_state)
+                } else {
+                    0
+                }
+            })
+            .collect();
+        self.set_cells(&cells);
+    }
+
     /// Replace every cell state.
     fn set_cells(&mut self, cells: &[u8]) {
         let grid = self.get_grid_mut();

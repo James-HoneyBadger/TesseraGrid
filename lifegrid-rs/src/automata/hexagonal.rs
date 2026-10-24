@@ -83,8 +83,11 @@ impl Automaton for HexagonalLife {
         &mut self.grid
     }
 
-    fn load_pattern(&mut self, _pattern: &str) {
+    fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
+        if pattern == "Empty" {
+            return;
+        }
         let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
             *cell = u8::from(rng.random::<f32>() < 0.15);
@@ -92,7 +95,7 @@ impl Automaton for HexagonalLife {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Random Soup"]
+        &["Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {
