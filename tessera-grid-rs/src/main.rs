@@ -1,3 +1,8 @@
+//! Tessera Grid — a cellular-automaton simulator built with egui.
+//!
+//! Launching without arguments opens the GUI; step/export flags switch to the
+//! headless CLI implemented in [`cli`].
+
 mod app;
 mod automata;
 mod cli;

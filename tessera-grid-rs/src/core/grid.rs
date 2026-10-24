@@ -1,3 +1,5 @@
+//! Flat row-major cell grid with neighbour counting.
+
 use super::BoundaryMode;
 
 /// A flat, heap-allocated 2-D grid of `u8` cells.

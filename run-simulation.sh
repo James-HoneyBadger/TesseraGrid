@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Build and run Tessera Grid. With no arguments this opens the GUI; flags are
+# forwarded to the binary, e.g.:
+#   ./run-simulation.sh --steps 100 --png growth.png --stats
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

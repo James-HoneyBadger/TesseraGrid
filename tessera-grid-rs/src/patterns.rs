@@ -1,3 +1,5 @@
+//! Built-in Conway patterns used by the loader and the pattern gallery.
+
 /// A named set of (dx, dy) offsets centred at the grid midpoint.
 pub struct PatternDef {
     pub name: &'static str,

@@ -1,4 +1,9 @@
 //! Color themes for the simulator UI and canvas.
+//!
+//! A theme defines the canvas palette (background plus states 1–8), grid and
+//! outline colours, panel/card/bar colours, the success colour, and whether
+//! egui starts from a dark or light base. [`Theme::accent`] adapts the
+//! per-mode accent so titles and charts stay readable on light backgrounds.
 
 use egui::Color32;
 
@@ -17,6 +22,7 @@ pub enum Theme {
 }
 
 impl Theme {
+    /// Every theme, in the order `T` cycles through them.
     pub fn all() -> &'static [Theme] {
         &[
             Self::Dark,
@@ -30,6 +36,7 @@ impl Theme {
         ]
     }
 
+    /// Human-readable name used in menus, config files and release docs.
     pub fn name(self) -> &'static str {
         match self {
             Self::Dark => "Dark",
@@ -58,10 +65,12 @@ impl Theme {
         }
     }
 
+    /// Whether egui should start from its dark base style.
     pub fn is_dark(self) -> bool {
         !matches!(self, Self::Light | Self::Paper)
     }
 
+    /// The next theme in cycle order (wraps around).
     pub fn next(self) -> Self {
         let all = Self::all();
         let index = all.iter().position(|&theme| theme == self).unwrap_or(0);
@@ -78,6 +87,7 @@ impl Theme {
         }
     }
 
+    /// Concrete colors for this theme.
     pub fn colors(self) -> ThemeColors {
         match self {
             Self::Dark => ThemeColors {
@@ -254,14 +264,23 @@ impl Theme {
 
 /// Concrete colors for one theme.
 pub struct ThemeColors {
+    /// Window background (`Visuals::window_fill`).
     pub window: Color32,
+    /// Side-panel background.
     pub panel: Color32,
+    /// Toolbar, status bar and card background.
     pub card: Color32,
+    /// Borders and separators.
     pub stroke: Color32,
+    /// Subtle widget backgrounds.
     pub faint: Color32,
+    /// Text-edit and slider tracks.
     pub extreme: Color32,
+    /// Canvas grid lines and border.
     pub grid: Color32,
+    /// Transient success/status text.
     pub ok: Color32,
+    /// Canvas palette: index 0 is the background, 1–8 are cell states.
     cells: [Color32; 9],
 }
 

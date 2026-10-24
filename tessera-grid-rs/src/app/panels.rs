@@ -1,3 +1,5 @@
+//! Sidebar controls: mode info, automaton, view, statistics and export.
+
 use super::*;
 
 impl TesseraGridApp {

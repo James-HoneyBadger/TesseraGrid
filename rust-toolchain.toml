@@ -1,3 +1,4 @@
+# Tessera Grid requires Rust 1.95 or newer (egui 0.36+).
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]

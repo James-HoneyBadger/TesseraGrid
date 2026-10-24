@@ -1,3 +1,5 @@
+//! Engine primitives: grid, boundary conditions, undo history and config.
+
 pub mod boundary;
 pub mod config;
 pub mod grid;

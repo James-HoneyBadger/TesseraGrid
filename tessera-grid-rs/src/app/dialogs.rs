@@ -1,3 +1,5 @@
+//! Floating dialogs: shortcuts, pattern gallery, run-N, resize and about.
+
 use super::*;
 
 /// Draw a 36×36 preview of a Conway pattern (or a placeholder).
@@ -49,6 +51,11 @@ impl TesseraGridApp {
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                 ui.label("A fast, native cellular-automaton simulator built with Rust and egui.");
                 ui.label("MIT licensed.");
+                ui.label(egui::RichText::new("Formerly LifeGrid").small().weak());
+                ui.hyperlink_to(
+                    "github.com/James-HoneyBadger/TesseraGrid",
+                    "https://github.com/James-HoneyBadger/TesseraGrid",
+                );
                 ui.separator();
                 ui.label(format!(
                     "{} modes · {}×{} grid · rule {}",
@@ -167,6 +174,11 @@ impl TesseraGridApp {
                         }
                     });
                 ui.add_space(8.0);
+                ui.hyperlink_to(
+                    "Documentation and source on GitHub",
+                    "https://github.com/James-HoneyBadger/TesseraGrid",
+                );
+                ui.add_space(4.0);
                 if ui.button("Close").clicked() {
                     self.show_help = false;
                 }

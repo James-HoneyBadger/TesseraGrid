@@ -17,7 +17,12 @@ const DEFAULT_MODE: &str = "Conway's Game of Life";
 
 /// Tessera Grid – a cellular-automaton simulator (GUI by default, headless on demand).
 #[derive(Parser, Debug)]
-#[command(name = "tessera", version, about, long_about = None)]
+#[command(
+    name = "tessera",
+    version,
+    long_about = None,
+    after_help = "Run without flags to open the GUI.\n\nExamples:\n  tessera --headless --steps 100 --png out.png\n  tessera --rule B36/S23 --randomize --seed 42 --gif out.gif\n  tessera --list-modes"
+)]
 pub struct Cli {
     /// Run without opening a window.
     #[arg(long)]

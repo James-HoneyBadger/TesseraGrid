@@ -19,8 +19,9 @@ for scripted runs.
   Langton's Ant, Wireworld, Brian's Brain, Generations, and any custom B/S rule.
 - **Direct manipulation** — paint with a 1–8 cell brush, interpolated strokes,
   right-click erase, region select/copy/cut/paste, wheel zoom, middle-drag pan.
-- **Pattern gallery** — searchable list with thumbnails and descriptions for
-  every Conway pattern, plus `Empty` and seeded `Randomize` in every mode.
+- **Pattern gallery** — searchable list of every pattern for the current mode,
+  with thumbnails and descriptions for the Conway set, plus `Empty` and seeded
+  `Randomize` in every mode.
 - **Custom rules** — type strings such as `B36/S23` or `B2/S`; the rule is
   applied on every keystroke.
 - **Boundary modes** — wrap (toroidal), fixed (dead edges), reflect (mirror).
@@ -83,8 +84,8 @@ cd TesseraGrid
 ./run-simulation.sh
 ```
 
-Extra arguments are forwarded to the binary, so the same script runs headless
-jobs:
+The script builds an optimised release binary before launching. Extra arguments
+are forwarded to the binary, so the same script runs headless jobs:
 
 ```bash
 ./run-simulation.sh --steps 250 --png growth.png --stats
@@ -102,8 +103,9 @@ cargo build --release && ./target/release/tessera
 
 ## Headless CLI
 
-The binary is `tessera`. Any run with steps, exports, or `--headless` skips the
-GUI entirely — useful for servers, CI, and reproducible experiments.
+The binary is `tessera`; run `tessera --help` for the generated reference. Any
+run with steps, exports, or `--headless` skips the GUI entirely — useful for
+servers, CI, and reproducible experiments.
 
 | Flag | Description |
 |------|-------------|
@@ -111,9 +113,9 @@ GUI entirely — useful for servers, CI, and reproducible experiments.
 | `--mode <MODE>` | Automaton mode (see `--list-modes`) |
 | `--rule <B/S>` | Custom rule, e.g. `B36/S23`; implies Custom Rules |
 | `--pattern <NAME>` | Starting pattern (defaults to the mode's first) |
-| `--width`, `--height` | Grid size in cells |
+| `--width`, `--height` | Grid size in cells (default 100) |
 | `--boundary <wrap\|fixed\|reflect>` | Edge behaviour |
-| `--steps <N>` | Generations to simulate |
+| `--steps <N>` | Generations to simulate (default 0) |
 | `--randomize` | Fill with a random soup |
 | `--seed <N>` | Seed for `--randomize` (implies it) |
 | `--png <PATH>` | Write a PNG snapshot |
@@ -175,6 +177,13 @@ cargo run --release -- --steps 100 --stats
 | Export PNG | `Ctrl+E` |
 | Shortcut reference | `H` or `F1` |
 
+### Themes
+
+Choose a theme from **View → Theme** or the sidebar **View** section, or press
+`T` to cycle. The eight themes are Dark, Light, Nord, Solarized Dark, Gruvbox,
+Dracula, High Contrast and Paper. The choice is saved with the rest of the
+configuration.
+
 ### Custom rules
 
 Choose **Custom Rules** and type B/S notation, for example:
@@ -199,6 +208,16 @@ Choose **Custom Rules** and type B/S notation, for example:
   - Override the directory with `TESSERA_CONFIG_DIR` (`LIFEGRID_CONFIG_DIR` is
     still honoured). An existing LifeGrid config is imported automatically.
   - The active theme, panel width, view mode, and brush size are saved here.
+
+### Migrating from LifeGrid
+
+Tessera Grid is the renamed LifeGrid project:
+
+- The command-line binary is now `tessera` (crate `tessera-grid`).
+- On first launch, `~/.config/lifegrid/lifegrid_config.json` is imported into
+  `~/.config/tessera-grid/config.json`; the old file is left untouched.
+- Saved `.lifegrid` grids can still be opened; new saves use `.tessera`.
+- `LIFEGRID_CONFIG_DIR` continues to work alongside `TESSERA_CONFIG_DIR`.
 
 ---
 
@@ -236,6 +255,7 @@ TesseraGrid/              # repository name
 │   │   │   ├── dialogs.rs   # help, gallery, run-n, resize, about
 │   │   │   ├── statusbar.rs
 │   │   │   └── theme.rs
+│   │   ├── theme.rs         # color themes and canvas palettes
 │   │   ├── sim.rs           # headless simulation controller
 │   │   ├── rle.rs           # RLE parser/encoder
 │   │   ├── patterns.rs      # built-in Conway patterns
@@ -244,7 +264,9 @@ TesseraGrid/              # repository name
 │   │   └── core/            # grid, boundary, undo, config
 │   └── tests/headless.rs    # end-to-end CLI tests
 ├── .github/workflows/       # CI and release pipelines
-├── run-simulation.sh
+├── docs/screenshots/        # images referenced by this README
+├── run-simulation.sh        # build + launch helper (forwards CLI flags)
+├── rust-toolchain.toml      # pinned Rust channel/components
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── CODE_OF_CONDUCT.md
@@ -263,7 +285,7 @@ cargo build --release
 ```
 
 Unit tests live next to the code (`src/automata/tests.rs`, `src/sim.rs`,
-`src/rle.rs`, `src/core/undo.rs`, `src/core/config.rs`), while
+`src/rle.rs`, `src/theme.rs`, `src/core/undo.rs`, `src/core/config.rs`), while
 `tests/headless.rs` runs the real binary end to end.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.

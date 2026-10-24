@@ -22,12 +22,6 @@ impl LifeLike {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn set_rules(&mut self, birth: Vec<u8>, survival: Vec<u8>) {
-        self.birth = birth;
-        self.survival = survival;
-    }
-
     /// Parse a "B3/S23" style string into (birth, survival).
     pub fn parse_bs(rule: &str) -> (Vec<u8>, Vec<u8>) {
         let rule = rule.to_uppercase();

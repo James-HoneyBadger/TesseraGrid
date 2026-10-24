@@ -1,3 +1,5 @@
+//! 2-D and isometric rendering, zoom/pan, painting and selection.
+
 use super::*;
 
 /// Cells along a Bresenham line, used to avoid gaps during fast drags.

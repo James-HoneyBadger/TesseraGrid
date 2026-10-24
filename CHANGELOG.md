@@ -22,6 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The GitHub repository is now `James-HoneyBadger/TesseraGrid`; GitHub redirects
   the previous `LifeGrid` URLs.
 
+### Documentation
+- README rewritten around the new name, with a migration guide, theme usage, a
+  full CLI reference, updated project layout and refreshed screenshots.
+- CONTRIBUTING now covers adding color themes, changing the versioned config,
+  running the headless CLI, and keeping README/in-app help/`--help` in sync.
+- The About dialog links to the repository, the help dialog links to the docs,
+  and `tessera --help` includes usage examples.
+- Added module-level documentation across the engine, UI and theme modules.
+
 ## [5.2.0] — 2026-10-24
 
 ### Added

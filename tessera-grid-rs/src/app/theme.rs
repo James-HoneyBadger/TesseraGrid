@@ -1,3 +1,5 @@
+//! Applies the selected [`crate::theme::Theme`] to egui's global style.
+
 use super::*;
 
 impl TesseraGridApp {

@@ -1,3 +1,5 @@
+//! Persistent, versioned application configuration.
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,5 @@
+//! Snapshot-based undo/redo history.
+
 use std::collections::VecDeque;
 
 /// A grid snapshot together with the generation it belongs to.

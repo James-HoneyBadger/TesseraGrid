@@ -1,3 +1,5 @@
+//! Menu bar and quick-action toolbar.
+
 use super::*;
 
 impl TesseraGridApp {

@@ -1,3 +1,5 @@
+//! Automaton implementations behind a single [`Automaton`] trait.
+
 pub mod ant;
 pub mod briansbrain;
 pub mod conway;

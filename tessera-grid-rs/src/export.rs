@@ -1,3 +1,5 @@
+//! PNG snapshot and animated GIF rendering.
+
 use image::codecs::gif::{GifEncoder, Repeat};
 use image::{Delay, Frame, ImageBuffer, Rgb, Rgba, RgbaImage};
 

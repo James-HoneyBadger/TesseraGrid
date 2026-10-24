@@ -1,3 +1,8 @@
+//! egui application shell: state, helpers and panel composition.
+//!
+//! Rendering lives in the child modules; all simulation work is delegated to
+//! [`crate::sim::Simulation`] so the GUI and CLI share one engine.
+
 mod canvas;
 mod dialogs;
 mod panels;

@@ -6,6 +6,7 @@
 *.png
 *.gif
 *.tessera
+# Legacy LifeGrid state files remain loadable
 *.lifegrid
 !docs/**/*.png
 !docs/**/*.gif

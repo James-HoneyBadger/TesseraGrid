@@ -1,3 +1,5 @@
+//! Status bar showing generation, population, theme and hovered cell.
+
 use super::*;
 
 impl TesseraGridApp {
