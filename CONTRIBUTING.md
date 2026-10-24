@@ -186,6 +186,24 @@ loading older files:
 
 ---
 
+## Where UI Code Goes
+
+The egui layer is split by responsibility so each file stays small:
+
+| Change | File |
+|--------|------|
+| New sidebar card | `src/app/sidebar/<name>.rs` with a `ui_<name>_section` method, wired into the card list in `src/app/sidebar/mod.rs` |
+| New dialog | `src/app/dialogs/<name>.rs` with a `ui_<name>` method, called from the frame loop in `src/app/shell.rs` |
+| Keyboard shortcut | handle it in `src/app/input.rs` and add a row to `SHORTCUTS` in `src/app/dialogs/help.rs` |
+| Flat/isometric drawing | `src/app/canvas/{flat,iso,paint,viewport}.rs`; `src/app/canvas/mod.rs` only dispatches |
+| Menu or toolbar button | `src/app/menu_bar.rs` or `src/app/toolbar.rs` |
+| Simulation action (step, reset, undo…) | `src/app/actions.rs`, delegating to `crate::sim` |
+| File or clipboard I/O | `src/app/io.rs` and `src/app/selection.rs` |
+| Persisted setting | `src/core/config.rs` plus `src/app/config.rs` |
+
+Only behaviour belongs in these modules — the engine in `src/sim.rs` must stay
+free of egui so the CLI keeps working headlessly.
+
 ## Project Layout
 
 | Path | Purpose |
