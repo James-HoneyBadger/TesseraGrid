@@ -6,18 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Changed
-- Split the egui layer into focused modules: `app/mod.rs` now only holds shared
-  state and constructors, with behaviour in `actions`, `input`, `io`,
-  `selection`, `config`, `menu_bar`, `toolbar`, `statusbar` and `shell`.
-- Canvas rendering moved to `app/canvas/` (`flat`, `iso`, `paint`, `viewport`),
-  the sidebar to `app/sidebar/` (one module per card) and the modal dialogs to
-  `app/dialogs/` (one module per dialog).
-- Theme palettes moved to `src/theme/palettes.rs`; `Theme` itself stays in
-  `src/theme/mod.rs`.
-- The headless CLI is split into `src/cli/args.rs` (clap definitions) and
-  `src/cli/run.rs` (execution).
-
 ## [6.0.0] — 2026-10-24
 
 ### Changed
@@ -33,6 +21,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The crate directory is now `tessera-grid-rs/`.
 - The GitHub repository is now `James-HoneyBadger/TesseraGrid`; GitHub redirects
   the previous `LifeGrid` URLs.
+- Split the egui layer into focused modules: `app/mod.rs` now only holds shared
+  state and constructors, with behaviour in `actions`, `input`, `io`,
+  `selection`, `config`, `menu_bar`, `toolbar`, `statusbar` and `shell`.
+- Canvas rendering moved to `app/canvas/` (`flat`, `iso`, `paint`, `viewport`),
+  the sidebar to `app/sidebar/` (one module per card) and the modal dialogs to
+  `app/dialogs/` (one module per dialog).
+- Theme palettes moved to `src/theme/palettes.rs`; `Theme` itself stays in
+  `src/theme/mod.rs`.
+- The headless CLI is split into `src/cli/args.rs` (clap definitions) and
+  `src/cli/run.rs` (execution).
 
 ### Documentation
 - README rewritten around the new name, with a migration guide, theme usage, a
