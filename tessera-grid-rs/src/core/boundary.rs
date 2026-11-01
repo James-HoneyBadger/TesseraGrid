@@ -19,18 +19,22 @@ impl BoundaryMode {
     /// `None` if it falls outside and the boundary mode discards it.
     #[inline]
     pub fn resolve(self, y: i32, x: i32, height: usize, width: usize) -> Option<(usize, usize)> {
-        let h = height as i32;
-        let w = width as i32;
+        Some((self.resolve_axis(y, height)?, self.resolve_axis(x, width)?))
+    }
+
+    /// Resolve a single axis coordinate.
+    ///
+    /// Returns `Some(index)` when the coordinate maps into `0..size`, or `None`
+    /// when it falls outside and the mode discards it. Both axes of
+    /// [`Self::resolve`] share this mapping, so neighbour loops can precompute
+    /// the index tables once instead of resolving per cell.
+    #[inline]
+    pub fn resolve_axis(self, i: i32, size: usize) -> Option<usize> {
+        let size_i = size as i32;
         match self {
-            Self::Wrap => Some((y.rem_euclid(h) as usize, x.rem_euclid(w) as usize)),
-            Self::Fixed => {
-                if y >= 0 && y < h && x >= 0 && x < w {
-                    Some((y as usize, x as usize))
-                } else {
-                    None
-                }
-            }
-            Self::Reflect => Some((reflect(y, h), reflect(x, w))),
+            Self::Wrap => Some(i.rem_euclid(size_i) as usize),
+            Self::Fixed => (i >= 0 && i < size_i).then_some(i as usize),
+            Self::Reflect => Some(reflect(i, size_i)),
         }
     }
 
