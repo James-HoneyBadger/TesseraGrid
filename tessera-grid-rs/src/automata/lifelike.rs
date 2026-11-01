@@ -22,36 +22,64 @@ impl LifeLike {
         }
     }
 
-    /// Parse a "B3/S23" style string into (birth, survival).
-    pub fn parse_bs(rule: &str) -> (Vec<u8>, Vec<u8>) {
-        let rule = rule.to_uppercase();
+    /// Parse and validate a "B3/S23" style rule.
+    ///
+    /// A cell has at most eight neighbours, so digits above 8 cannot appear in
+    /// a meaningful rule. Rejecting them matters: `B10/S1` used to parse as
+    /// birth `[1, 0]`, and a birth rule containing 0 makes every dead cell with
+    /// no live neighbours spring to life.
+    pub fn try_parse_bs(rule: &str) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let upper = rule.to_uppercase();
         let mut birth = Vec::new();
         let mut survival = Vec::new();
         let mut in_birth = false;
         let mut in_survival = false;
-        for ch in rule.chars() {
+        let mut seen = false;
+
+        for ch in upper.chars() {
             match ch {
                 'B' => {
                     in_birth = true;
                     in_survival = false;
+                    seen = true;
                 }
                 'S' => {
                     in_birth = false;
                     in_survival = true;
+                    seen = true;
                 }
-                '/' => {}
+                '/' | ',' | ' ' => {}
                 c if c.is_ascii_digit() => {
-                    let d = c as u8 - b'0';
+                    let digit = c as u8 - b'0';
+                    if digit > 8 {
+                        return Err(format!(
+                            "neighbour count {digit} is out of range (0–8) in '{rule}'"
+                        ));
+                    }
                     if in_birth {
-                        birth.push(d);
+                        birth.push(digit);
                     } else if in_survival {
-                        survival.push(d);
+                        survival.push(digit);
+                    } else {
+                        return Err(format!("'{rule}' must use B…/S… notation"));
                     }
                 }
-                _ => {}
+                other => {
+                    return Err(format!("unexpected '{other}' in rule '{rule}'"));
+                }
             }
         }
-        (birth, survival)
+        if !seen {
+            return Err(format!("'{rule}' is not a B/S rule"));
+        }
+        Ok((birth, survival))
+    }
+
+    /// Render a rule back into B/S notation.
+    pub fn format_bs(birth: &[u8], survival: &[u8]) -> String {
+        let birth: String = birth.iter().map(|n| n.to_string()).collect();
+        let survival: String = survival.iter().map(|n| n.to_string()).collect();
+        format!("B{birth}/S{survival}")
     }
 }
 
@@ -108,8 +136,6 @@ impl Automaton for LifeLike {
         self.boundary = mode;
     }
     fn rule_string(&self) -> String {
-        let birth: String = self.birth.iter().map(|n| n.to_string()).collect();
-        let survival: String = self.survival.iter().map(|n| n.to_string()).collect();
-        format!("B{birth}/S{survival}")
+        Self::format_bs(&self.birth, &self.survival)
     }
 }

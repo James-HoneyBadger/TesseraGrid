@@ -77,10 +77,16 @@ impl TesseraGridApp {
                         let old_rule = self.custom_rule_str.clone();
                         ui.text_edit_singleline(&mut self.custom_rule_str);
                         if self.custom_rule_str != old_rule {
-                            let (b, s) = LifeLike::parse_bs(&self.custom_rule_str);
-                            self.custom_birth = b;
-                            self.custom_survival = s;
-                            self.rebuild_automaton();
+                            match LifeLike::try_parse_bs(&self.custom_rule_str) {
+                                Ok((b, s)) => {
+                                    self.custom_birth = b;
+                                    self.custom_survival = s;
+                                    self.rebuild_automaton();
+                                }
+                                // Keep the previous rule while the text is
+                                // unparseable rather than substituting a default.
+                                Err(err) => self.set_status(format!("Invalid rule: {err}")),
+                            }
                         }
                     }
 

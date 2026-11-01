@@ -22,7 +22,9 @@ pub fn run(cli: &Cli) -> Result<(), String> {
     }
 
     let (birth, survival) = match &cli.rule {
-        Some(rule) => LifeLike::parse_bs(rule),
+        Some(rule) => {
+            LifeLike::try_parse_bs(rule).map_err(|err| format!("invalid --rule: {err}"))?
+        }
         None => (vec![3], vec![2, 3]),
     };
 
@@ -83,15 +85,9 @@ pub fn run(cli: &Cli) -> Result<(), String> {
             return Err("GIF export needs at least one recorded step (use --steps)".to_owned());
         }
         let delay_ms = 1000 / cli.gif_fps.clamp(1, 60);
-        export::export_gif(
-            sim.frames(),
-            sim.width(),
-            sim.height(),
-            cell_size,
-            delay_ms,
-            path,
-        )
-        .map_err(|err| format!("GIF export failed: {err}"))?;
+        let (grid_w, grid_h) = (sim.width(), sim.height());
+        export::export_gif(sim.frames(), grid_w, grid_h, cell_size, delay_ms, path)
+            .map_err(|err| format!("GIF export failed: {err}"))?;
     }
     if let Some(path) = &cli.rle {
         let encoded = rle::encode(sim.grid(), &sim.rule_string());

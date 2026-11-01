@@ -45,7 +45,8 @@ mod tests {
     fn rule_implies_custom_mode() {
         let cli = Cli::try_parse_from(["tessera", "--rule", "B36/S23", "--stats"]).expect("parse");
         assert!(cli.is_headless());
-        let (birth, survival) = LifeLike::parse_bs(cli.rule.as_deref().unwrap());
+        let (birth, survival) =
+            LifeLike::try_parse_bs(cli.rule.as_deref().unwrap()).expect("valid rule");
         assert_eq!(birth, vec![3, 6]);
         assert_eq!(survival, vec![2, 3]);
     }
