@@ -12,6 +12,37 @@ struct SavedState {
     cells: Vec<u8>,
 }
 
+impl SavedState {
+    /// Reject dimensions the engine cannot honour.
+    ///
+    /// The file is arbitrary user input, so a hand-written (or corrupt) header
+    /// claiming a billion rows must not become a billion-byte allocation. The
+    /// cell count must also match the declared size, otherwise the grid would
+    /// be silently left empty.
+    fn validate(&self) -> Result<(), String> {
+        if !(1..=crate::sim::MAX_GRID_SIDE).contains(&self.width)
+            || !(1..=crate::sim::MAX_GRID_SIDE).contains(&self.height)
+        {
+            return Err(format!(
+                "grid size {}×{} is outside 1–{}",
+                self.width,
+                self.height,
+                crate::sim::MAX_GRID_SIDE
+            ));
+        }
+        let expected = self.width * self.height;
+        if self.cells.len() != expected {
+            return Err(format!(
+                "{} cells do not match a {}×{} grid",
+                self.cells.len(),
+                self.width,
+                self.height
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl TesseraGridApp {
     pub(super) fn export_png_dialog(&mut self) {
         let Some(path) = rfd::FileDialog::new()
@@ -154,6 +185,10 @@ impl TesseraGridApp {
             match std::fs::read_to_string(&path) {
                 Ok(text) => match serde_json::from_str::<SavedState>(&text) {
                     Ok(state) => {
+                        if let Err(err) = state.validate() {
+                            self.set_status(format!("Parse error: {err}"));
+                            return;
+                        }
                         self.sim.rebuild(
                             &state.automaton,
                             state.width,
@@ -165,9 +200,7 @@ impl TesseraGridApp {
                             ),
                             "",
                         );
-                        if state.cells.len() == self.sim.grid().cells.len() {
-                            self.sim.set_cells(&state.cells);
-                        }
+                        self.sim.set_cells(&state.cells);
                         self.sim.generation = state.generation;
                         self.selected_mode = state.automaton;
                         self.selected_pattern = self
@@ -188,5 +221,54 @@ impl TesseraGridApp {
                 Err(e) => self.set_status(format!("Read error: {e}")),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SavedState;
+    use crate::sim::MAX_GRID_SIDE;
+
+    fn state(width: usize, height: usize, cells: Vec<u8>) -> SavedState {
+        SavedState {
+            automaton: "Conway's Game of Life".to_owned(),
+            generation: 0,
+            width,
+            height,
+            cells,
+        }
+    }
+
+    #[test]
+    fn a_matching_file_is_accepted() {
+        assert!(state(4, 3, vec![0; 12]).validate().is_ok());
+    }
+
+    #[test]
+    fn a_hostile_header_is_rejected_before_allocating() {
+        // This used to drive `Grid::new(1e9, 1e9)` and abort on allocation.
+        let err = state(1_000_000_000, 1_000_000_000, Vec::new())
+            .validate()
+            .expect_err("oversized header must be rejected");
+        assert!(err.contains("outside"), "{err}");
+
+        let err = state(MAX_GRID_SIDE + 1, 1, vec![0; MAX_GRID_SIDE + 1])
+            .validate()
+            .expect_err("one past the limit must be rejected");
+        assert!(err.contains("outside"), "{err}");
+    }
+
+    #[test]
+    fn zero_sized_grids_are_rejected() {
+        assert!(state(0, 10, Vec::new()).validate().is_err());
+        assert!(state(10, 0, Vec::new()).validate().is_err());
+    }
+
+    #[test]
+    fn a_cell_count_that_disagrees_with_the_size_is_rejected() {
+        let err = state(4, 3, vec![1; 11])
+            .validate()
+            .expect_err("short cell list must be rejected");
+        assert!(err.contains("do not match"), "{err}");
     }
 }
