@@ -1,22 +1,15 @@
 //! Tessera Grid — a cellular-automaton simulator built with egui.
 //!
 //! Launching without arguments opens the GUI; step/export flags switch to the
-//! headless CLI implemented in [`cli`].
-
-mod app;
-mod automata;
-mod cli;
-mod core;
-mod export;
-mod patterns;
-mod rle;
-mod sim;
-mod theme;
+//! headless CLI. All engine and UI logic lives in the `tessera_grid` library.
 
 use clap::Parser;
 
+use tessera_grid::app::TesseraGridApp;
+use tessera_grid::cli::{self, Cli};
+
 fn main() -> eframe::Result<()> {
-    let args = cli::Cli::parse();
+    let args = Cli::parse();
     if args.is_headless() {
         match cli::run(&args) {
             Ok(()) => return Ok(()),
@@ -39,6 +32,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "tessera-grid",
         options,
-        Box::new(|cc| Ok(Box::new(app::TesseraGridApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(TesseraGridApp::new(cc)))),
     )
 }
