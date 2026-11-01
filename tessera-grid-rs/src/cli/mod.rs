@@ -42,6 +42,35 @@ mod tests {
     }
 
     #[test]
+    fn configuration_flags_imply_headless() {
+        // `--mode` alone used to open the GUI and ignore the flag.
+        for args in [
+            vec!["tessera", "--mode", "High Life"],
+            vec!["tessera", "--pattern", "Glider Gun"],
+            vec!["tessera", "--width", "40"],
+            vec!["tessera", "--height", "40"],
+            vec!["tessera", "--boundary", "fixed"],
+        ] {
+            let cli = Cli::try_parse_from(&args).expect("parse");
+            assert!(cli.is_headless(), "{args:?} should run headless");
+        }
+    }
+
+    #[test]
+    fn defaults_apply_when_geometry_is_omitted() {
+        let cli = Cli::try_parse_from(["tessera", "--stats"]).expect("parse");
+        assert_eq!(cli.grid_width(), 100);
+        assert_eq!(cli.grid_height(), 100);
+        assert_eq!(cli.boundary_mode().expect("default"), BoundaryMode::Wrap);
+    }
+
+    #[test]
+    fn an_unknown_boundary_is_rejected() {
+        let cli = Cli::try_parse_from(["tessera", "--boundary", "pentagon"]).expect("parse");
+        assert!(cli.boundary_mode().is_err());
+    }
+
+    #[test]
     fn rule_implies_custom_mode() {
         let cli = Cli::try_parse_from(["tessera", "--rule", "B36/S23", "--stats"]).expect("parse");
         assert!(cli.is_headless());

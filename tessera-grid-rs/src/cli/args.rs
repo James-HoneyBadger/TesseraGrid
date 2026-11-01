@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// Parse a `--boundary` value.
+fn parse_boundary(value: &str) -> Result<BoundaryMode, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "wrap" | "toroidal" => Ok(BoundaryMode::Wrap),
+        "fixed" | "dead" => Ok(BoundaryMode::Fixed),
+        "reflect" | "mirror" => Ok(BoundaryMode::Reflect),
+        other => Err(format!(
+            "unknown boundary '{other}'. Expected wrap, fixed or reflect"
+        )),
+    }
+}
+
 /// Tessera Grid – a cellular-automaton simulator (GUI by default, headless on demand).
 #[derive(Parser, Debug)]
 #[command(
@@ -27,17 +39,17 @@ pub struct Cli {
     #[arg(long, value_name = "NAME")]
     pub pattern: Option<String>,
 
-    /// Grid width in cells.
-    #[arg(long, default_value_t = 100)]
-    pub width: usize,
+    /// Grid width in cells (default 100).
+    #[arg(long, value_name = "N")]
+    pub width: Option<usize>,
 
-    /// Grid height in cells.
-    #[arg(long, default_value_t = 100)]
-    pub height: usize,
+    /// Grid height in cells (default 100).
+    #[arg(long, value_name = "N")]
+    pub height: Option<usize>,
 
-    /// Boundary mode: wrap, fixed or reflect.
-    #[arg(long, default_value = "wrap")]
-    pub boundary: String,
+    /// Boundary mode: wrap, fixed or reflect (default wrap).
+    #[arg(long, value_name = "MODE")]
+    pub boundary: Option<String>,
 
     /// Generations to simulate before exporting.
     #[arg(long, default_value_t = 0)]
@@ -82,6 +94,9 @@ pub struct Cli {
 
 impl Cli {
     /// True when the invocation should not open a window.
+    ///
+    /// Every configuration flag counts, not just the output ones: passing
+    /// `--mode` alone used to open the GUI and silently ignore the flag.
     pub fn is_headless(&self) -> bool {
         self.headless
             || self.list_modes
@@ -92,5 +107,26 @@ impl Cli {
             || self.gif.is_some()
             || self.rle.is_some()
             || self.stats
+            || self.mode.is_some()
+            || self.rule.is_some()
+            || self.pattern.is_some()
+            || self.width.is_some()
+            || self.height.is_some()
+            || self.boundary.is_some()
+    }
+
+    /// Grid width, applying the documented default.
+    pub fn grid_width(&self) -> usize {
+        self.width.unwrap_or(100)
+    }
+
+    /// Grid height, applying the documented default.
+    pub fn grid_height(&self) -> usize {
+        self.height.unwrap_or(100)
+    }
+
+    /// Boundary mode, applying the documented default.
+    pub fn boundary_mode(&self) -> Result<BoundaryMode, String> {
+        parse_boundary(self.boundary.as_deref().unwrap_or("wrap"))
     }
 }

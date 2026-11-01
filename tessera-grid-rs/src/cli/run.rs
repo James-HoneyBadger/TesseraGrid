@@ -28,19 +28,9 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         None => (vec![3], vec![2, 3]),
     };
 
-    let boundary = match cli.boundary.to_ascii_lowercase().as_str() {
-        "wrap" | "toroidal" => BoundaryMode::Wrap,
-        "fixed" | "dead" => BoundaryMode::Fixed,
-        "reflect" | "mirror" => BoundaryMode::Reflect,
-        other => {
-            return Err(format!(
-                "unknown boundary '{other}'. Expected wrap, fixed or reflect"
-            ))
-        }
-    };
-
-    let width = cli.width.clamp(1, 4096);
-    let height = cli.height.clamp(1, 4096);
+    let boundary = cli.boundary_mode()?;
+    let width = cli.grid_width().clamp(1, 4096);
+    let height = cli.grid_height().clamp(1, 4096);
     let rule_spec = RuleSpec::new(boundary, &birth, &survival);
     let mut sim = Simulation::new(&mode, width, height, rule_spec, "");
 
