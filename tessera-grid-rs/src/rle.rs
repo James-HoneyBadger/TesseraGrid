@@ -5,6 +5,19 @@
 
 use crate::core::Grid;
 
+/// Largest number of live cells a single document may decode to.
+///
+/// RLE is extremely compact — `2000000000o!` is a valid 13-byte document that
+/// names two billion cells — so the parser must bound expansion. 8 Mi cells is
+/// 96 MiB of `RlePattern` entries and far beyond any hand-drawn pattern.
+pub const MAX_CELLS: usize = 8 * 1024 * 1024;
+
+/// Largest run length accepted for a single token.
+///
+/// Longer runs almost always mean a malformed or hostile document; clamping
+/// keeps the per-token work bounded as well.
+pub const MAX_RUN: u32 = 1_000_000;
+
 /// A parsed RLE pattern.
 #[derive(Debug, Default, Clone)]
 pub struct RlePattern {
@@ -13,6 +26,9 @@ pub struct RlePattern {
     pub width: usize,
     pub height: usize,
     pub rule: Option<String>,
+    /// `true` when the document asked for more cells than [`MAX_CELLS`] and was
+    /// truncated, so callers can warn instead of silently dropping content.
+    pub truncated: bool,
 }
 
 impl RlePattern {
@@ -57,8 +73,9 @@ pub fn parse(source: &str) -> RlePattern {
     let mut y = 0i32;
     let mut count = 0u32;
     let mut has_count = false;
+    let mut truncated = false;
 
-    for ch in body.chars() {
+    'document: for ch in body.chars() {
         match ch {
             '0'..='9' => {
                 count = count
@@ -67,17 +84,36 @@ pub fn parse(source: &str) -> RlePattern {
                 has_count = true;
             }
             'b' | '.' => {
-                x += take_count(&mut count, &mut has_count);
+                let run = take_count(&mut count, &mut has_count);
+                if run > MAX_RUN {
+                    truncated = true;
+                    break 'document;
+                }
+                x = x.saturating_add(run as i32);
             }
             'o' | 'A'..='X' => {
+                let run = take_count(&mut count, &mut has_count);
+                if run > MAX_RUN {
+                    truncated = true;
+                    break 'document;
+                }
                 let state = if ch == 'o' { 1 } else { ch as u8 - b'A' + 1 };
-                for _ in 0..take_count(&mut count, &mut has_count) {
+                for _ in 0..run {
+                    if cells.len() >= MAX_CELLS {
+                        truncated = true;
+                        break 'document;
+                    }
                     cells.push((x, y, state));
-                    x += 1;
+                    x = x.saturating_add(1);
                 }
             }
             '$' => {
-                y += take_count(&mut count, &mut has_count);
+                let run = take_count(&mut count, &mut has_count);
+                if run > MAX_RUN {
+                    truncated = true;
+                    break 'document;
+                }
+                y = y.saturating_add(run as i32);
                 x = 0;
             }
             '!' => break,
@@ -96,11 +132,17 @@ pub fn parse(source: &str) -> RlePattern {
         width: width.unwrap_or(computed_w),
         height: height.unwrap_or(computed_h),
         rule,
+        truncated,
     }
 }
 
-fn take_count(count: &mut u32, has_count: &mut bool) -> i32 {
-    let n = if *has_count { *count } else { 1 } as i32;
+/// Consume the pending run length.
+///
+/// Returns the raw count so callers can reject a run longer than [`MAX_RUN`].
+/// A previous version cast it straight to `i32`, so a large count either
+/// exploded the cell list or (past `i32::MAX`) wrapped negative.
+fn take_count(count: &mut u32, has_count: &mut bool) -> u32 {
+    let n = if *has_count { *count } else { 1 };
     *count = 0;
     *has_count = false;
     n.max(1)
@@ -237,5 +279,48 @@ mod tests {
     fn encodes_empty_grid() {
         let grid = Grid::new(5, 5);
         assert_eq!(encode(&grid, "B3/S23"), "x = 0, y = 0, rule = B3/S23\n!");
+    }
+
+    #[test]
+    fn huge_run_lengths_are_capped() {
+        // 13 bytes that used to request two billion cells.
+        let pattern = parse("x = 1, y = 1, rule = B3/S23\n2000000000o!");
+        assert!(
+            pattern.cells.len() <= MAX_CELLS,
+            "expanded to {} cells",
+            pattern.cells.len()
+        );
+        assert!(pattern.truncated, "an oversized run must be reported");
+    }
+
+    #[test]
+    fn run_lengths_that_would_wrap_negative_are_capped() {
+        // A count beyond i32::MAX used to wrap to a negative run length.
+        let pattern = parse("10000000000o!");
+        assert!(pattern.truncated);
+        assert!(pattern.cells.len() <= MAX_CELLS);
+    }
+
+    #[test]
+    fn rows_longer_than_the_run_cap_are_truncated() {
+        let pattern = parse("9999999999$o!");
+        assert!(pattern.truncated);
+    }
+
+    #[test]
+    fn many_legal_runs_still_cannot_exceed_the_cell_cap() {
+        // Nine runs of MAX_RUN live cells each: legal individually, 9M in total.
+        let run = format!("{MAX_RUN}o");
+        let document = format!("{}{}", run.repeat(9), "!");
+        let pattern = parse(&document);
+        assert!(pattern.truncated);
+        assert_eq!(pattern.cells.len(), MAX_CELLS);
+    }
+
+    #[test]
+    fn normal_documents_are_not_marked_truncated() {
+        let pattern = parse("x = 3, y = 3, rule = B3/S23\nbo$2bo$3o!");
+        assert!(!pattern.truncated);
+        assert_eq!(pattern.cells.len(), 5);
     }
 }
