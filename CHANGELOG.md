@@ -4,13 +4,14 @@ All notable changes to Tessera Grid are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.2.0] — 2026-10-31
 
 ### Added
 - A `lib.rs` target, so the engine can be exercised from integration tests and
   benchmarks without spawning the `tessera` binary.
 - `tests/engine.rs` covering population tracking, undo/redo, timeline scrubbing,
   render-frame reuse and grid-size clamping.
+- CLI tests for headless detection, default geometry and boundary parsing.
 
 ### Fixed
 - **Undo, redo and the timeline corrupted Langton's Ant.** Snapshots stored the
@@ -40,6 +41,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--rule` now rejects impossible neighbour counts (above 8) and malformed input
   instead of silently simulating a different rule; the rule editor keeps the
   last valid rule while the text is unparseable.
+- **Configuration flags were silently ignored**: `tessera --mode "High Life"`
+  opened the GUI without applying the mode, because only output flags triggered
+  a headless run. Any option now counts, matching what `--help` promises.
 
 ### Changed
 - Neighbour counting is ~5× faster. `Grid::neighbor_counts` and

@@ -91,9 +91,11 @@ cargo build --release
 ### Tests
 
 - Automaton rules go in `src/automata/tests.rs`; engine behaviour in the
-  `#[cfg(test)]` module of `src/sim.rs`; parsing/serialisation next to the code
+  `#[cfg(test)]` module of `src/sim.rs`; neighbour counting in `src/core/grid.rs`;
+  parsing/serialisation next to the code
   (`rle.rs`, `core/undo.rs`, `core/config.rs`).
-- End-to-end CLI coverage lives in `tests/headless.rs` and runs the real binary.
+- `tests/engine.rs` drives the library in process; `tests/headless.rs` runs the
+  real binary end to end.
 - UI-state helpers that are easy to get wrong (pattern drafts, timeline
   history) belong in their own `#[cfg(test)]` modules.
 - Run everything with `cargo test --all-targets`.
@@ -109,7 +111,9 @@ cargo build --release
 - Add doc comments (`///`) for public items and `//!` module summaries for new modules.
 - Update `README.md`, `CHANGELOG.md`, and this file when behaviour changes.
 - Keep shortcut text in sync: `SHORTCUTS` in `src/app/dialogs/help.rs`, the
-  in-app help dialog, and the keyboard table in `README.md`.
+  in-app help dialog, and the keyboard table in `README.md`. Write `{CMD}` for
+  the command modifier (rendered as Ctrl, or Cmd on macOS) and bind it with
+  `Modifiers::COMMAND`, never `modifiers.ctrl`.
 - CLI flags live in `src/cli/args.rs`; `tessera --help` is generated, so keep the
   README flag table aligned with it.
 - Screenshots live in `docs/screenshots/` and are referenced from `README.md`.
@@ -163,9 +167,16 @@ cargo build --release
    `paint`. Override those only if the automaton keeps auxiliary state (see
    `Langton's Ant`); the default implementations are correct for plain grids.
 
+   If `get_grid()` returns anything the simulation does not step from — a
+   render-only marker, for example — also override `state_cells()` so undo and
+   the timeline store canonical state, and `aux_state()`/`set_aux_state()` for
+   state that lives outside the grid.
+
 2. Add `mod <name>;` and `pub use <name>::MyAutomaton;` in `automata/mod.rs`.
-3. Add the display name to `ALL_MODES`, a match arm in `make_automaton`, and a
-   short description in `description()`.
+3. Add a `Mode` variant plus its entry in `Mode::ALL`, `Mode::name()`,
+   `Mode::description()` and `Mode::build()`. The `match` arms are exhaustive, so
+   the compiler will point at anything you miss; `ALL_MODES`, `description()` and
+   `make_automaton()` derive from the enum and need no edits.
 4. Add a next-generation test in `src/automata/tests.rs` and make sure the
    generic "Empty + deterministic randomize" test still passes.
 5. Update `README.md` and `CHANGELOG.md`.
@@ -223,17 +234,18 @@ free of egui so the CLI keeps working headlessly.
 
 | Path | Purpose |
 |------|---------|
-| `tessera-grid-rs/src/main.rs` | CLI dispatch and GUI launch |
+| `tessera-grid-rs/src/lib.rs` | Library root: engine and UI, used by tests |
+| `tessera-grid-rs/src/main.rs` | Thin entry point: CLI dispatch and GUI launch |
 | `tessera-grid-rs/src/cli/` | CLI arguments and headless run |
 | `tessera-grid-rs/src/app/` | egui shell, actions, input, I/O, canvas, sidebar, dialogs, timeline |
 | `tessera-grid-rs/src/sim.rs` | Headless simulation controller (engine + undo + stats) |
 | `tessera-grid-rs/src/rle.rs` | RLE import/export |
 | `tessera-grid-rs/src/theme/` | Theme enum, accents and per-theme palettes |
 | `tessera-grid-rs/src/automata/` | Automaton trait, implementations, rule tests |
-| `tessera-grid-rs/src/core/` | Grid, boundary modes, undo manager, config |
+| `tessera-grid-rs/src/core/` | Grid and neighbour counting, boundary modes, undo manager, config |
 | `tessera-grid-rs/src/export.rs` | PNG and GIF rendering |
 | `tessera-grid-rs/src/patterns.rs` | Built-in Conway pattern data |
-| `tessera-grid-rs/tests/` | End-to-end CLI tests |
+| `tessera-grid-rs/tests/` | In-process engine tests and end-to-end CLI tests |
 | `tessera-grid-rs/deny.toml` | cargo-deny policy for advisories, licenses and sources |
 | `docs/screenshots/` | Screenshots embedded in the README and release post |
 

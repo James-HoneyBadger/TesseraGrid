@@ -27,7 +27,8 @@ rename, themes, timeline and pattern editor.
   with thumbnails and descriptions for the Conway set, plus `Empty` and seeded
   `Randomize` in every mode.
 - **Custom rules** — type strings such as `B36/S23` or `B2/S`; the rule is
-  applied on every keystroke.
+  applied on every keystroke, and unparseable text keeps the last valid rule
+  instead of substituting a default. Neighbour counts above 8 are rejected.
 - **Boundary modes** — wrap (toroidal), fixed (dead edges), reflect (mirror).
   Modes that ignore boundaries show the control disabled.
 - **Isometric 3-D view** — height-mapped blocks with adjustable block height.
@@ -72,8 +73,8 @@ rename, themes, timeline and pattern editor.
 
 ## Prerequisites
 
-- **Rust 1.95 or newer** (required by egui 0.36+). `rustup` installs it via
-  [rust-toolchain.toml](rust-toolchain.toml).
+- **Rust 1.95 or newer** — the MSRV declared in `Cargo.toml` and required by
+  egui 0.37. `rustup` installs it via [rust-toolchain.toml](rust-toolchain.toml).
 - A C linker (`gcc` or `clang`).
 - A display server (X11 or Wayland) **only for the GUI**; the CLI is headless.
 - Linux build libraries:
@@ -114,9 +115,10 @@ cargo build --release && ./target/release/tessera
 
 ## Headless CLI
 
-The binary is `tessera`; run `tessera --help` for the generated reference. Any
-run with steps, exports, or `--headless` skips the GUI entirely — useful for
-servers, CI, and reproducible experiments.
+The binary is `tessera`; run `tessera --help` for the generated reference. Passing
+any option at all — `--steps`, an export path, or even just `--mode` — skips the
+GUI entirely, which makes scripted runs, CI jobs and reproducible experiments
+straightforward. With no arguments the window opens.
 
 | Flag | Description |
 |------|-------------|
@@ -213,7 +215,13 @@ Choose **Custom Rules** and type B/S notation, for example:
   and cell buffer; they load across versions, and legacy `.lifegrid` files can
   still be opened.
 - **RLE** uses standard Golly/LifeWiki syntax and carries the active rule in the
-  header (`B36/S23`, `B2/S34H`, `WireWorld`, …).
+  header (`B36/S23`, `B2/S34H`, `WireWorld`, …). Imported documents are bounded:
+  a single run may not exceed 1,000,000 cells and a document is capped at
+  8,388,608, so a compact hostile file cannot exhaust memory. Truncation is
+  reported in the status bar.
+- **State files** are validated before loading: a size outside 1–4096 per side,
+  or a cell count that disagrees with the declared size, is reported as a parse
+  error rather than allocated.
 - **GIF** recording keeps the newest frames within a 256 MB budget so long runs
   cannot exhaust memory.
 - **Configuration** is stored at:
@@ -242,10 +250,10 @@ Tessera Grid is the renamed LifeGrid project:
 |------|------|------------------|
 | Conway's Game of Life | `B3/S23` | wrap / fixed / reflect |
 | High Life | `B36/S23` | wrap / fixed / reflect |
-| Hexagonal Life | `B2/S34H` (odd-r hex) | fixed (wraps) |
+| Hexagonal Life | `B2/S34H` (odd-r hex) | ignored (always wraps) |
 | Immigration Game | two-colour `B3/S23` | wrap / fixed / reflect |
 | Rainbow Game | six-colour cyclic Life | wrap / fixed / reflect |
-| Langton's Ant | `LangtonsAnt` | fixed (wraps) |
+| Langton's Ant | `LangtonsAnt` | ignored (always wraps) |
 | Wireworld | `WireWorld` | wrap / fixed / reflect |
 | Brian's Brain | `Brian'sBrain` | wrap / fixed / reflect |
 | Generations | `B3/S23/C8` | wrap / fixed / reflect |
@@ -308,10 +316,12 @@ TesseraGrid/              # repository name
 │   │   ├── rle.rs           # RLE parser/encoder
 │   │   ├── patterns.rs      # built-in Conway patterns
 │   │   ├── export.rs        # PNG and GIF rendering
-│   │   ├── automata/        # 10 automata behind one trait + tests
-│   │   └── core/            # grid, boundary, undo, config
+│   │   ├── automata/        # 10 automata behind one trait, Mode enum + tests
+│   │   └── core/            # grid, neighbour counting, boundary, undo, config
 │   ├── deny.toml            # cargo-deny policy (advisories, licenses)
-│   └── tests/headless.rs    # end-to-end CLI tests
+│   └── tests/
+│       ├── engine.rs        # in-process engine tests
+│       └── headless.rs      # end-to-end CLI tests
 ├── .github/workflows/       # CI, security audit and release pipelines
 ├── docs/
 │   ├── announcing-tessera-grid.md  # 6.x release post
@@ -338,8 +348,10 @@ cargo llvm-cov --all-targets --lcov --output-path lcov.info   # optional coverag
 ```
 
 Unit tests live next to the code (`src/automata/tests.rs`, `src/sim.rs`,
-`src/rle.rs`, `src/theme/mod.rs`, `src/core/undo.rs`, `src/core/config.rs`), while
-`tests/headless.rs` runs the real binary end to end.
+`src/rle.rs`, `src/core/grid.rs`, `src/core/undo.rs`, `src/core/config.rs`,
+`src/theme/mod.rs`, `src/app/selection.rs`, `src/app/io.rs`).
+`tests/engine.rs` drives the library in process, and `tests/headless.rs` runs the
+real binary end to end.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
