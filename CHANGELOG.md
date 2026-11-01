@@ -6,6 +6,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- A `lib.rs` target, so the engine can be exercised from integration tests and
+  benchmarks without spawning the `tessera` binary.
+- `tests/engine.rs` covering population tracking, undo/redo, timeline scrubbing,
+  render-frame reuse and grid-size clamping.
+
+### Fixed
+- **Undo, redo and the timeline corrupted Langton's Ant.** Snapshots stored the
+  *display* grid, which draws the ant as state 2; restoring one wrote that marker
+  into the simulation and the next step underflowed `1 - 2`. Snapshots now store
+  the automaton's canonical state and the ant position/heading, so replaying from
+  an undone state retraces the same history.
+- **Copy/cut/clear could panic** after dragging a selection outside the grid:
+  negative coordinates were cast to `usize`, producing a region of ~1.8e19 cells.
+  Selections are now clamped to the grid, and the region helpers clamp again
+  before indexing.
+- **`Ctrl+S` stepped the simulation** and **`Ctrl+V` also toggled the 3-D view**,
+  because egui's `key_pressed` ignores modifiers. Chords now consume their key
+  before the plain-key bindings run.
+- **Shortcuts were dead on macOS**: bindings used `modifiers.ctrl` instead of
+  `Modifiers::COMMAND`, so Cmd+C/S/Z never matched. The help dialog and README
+  now show the platform modifier.
+- Shortcuts no longer mutate the simulation while a dialog is open; `Escape`
+  closes the topmost dialog instead.
+- **Loading a `.tessera` file trusted its header.** A file declaring a billion
+  rows aborted the process on allocation; width, height and cell count are now
+  validated against the engine limit before anything is allocated.
+- **RLE import had unbounded expansion**: a 13-byte document such as
+  `2000000000o!` decoded to two billion cells (24 GB). Parsing now rejects runs
+  longer than a million cells, caps documents at 8 Mi cells, and reports
+  truncation. Counts past `i32::MAX` used to wrap negative.
+- `--rule` now rejects impossible neighbour counts (above 8) and malformed input
+  instead of silently simulating a different rule; the rule editor keeps the
+  last valid rule while the text is unparseable.
+
+### Changed
+- Neighbour counting is ~5× faster. `Grid::neighbor_counts` and
+  `neighbor_stats_alive` replace per-cell division, modulo and eight boundary
+  lookups with two additive row-major passes (horizontal, then vertical), still
+  parallelised across row bands. A 1000×1000 Conway step dropped from 7.5 ms to
+  2.5 ms.
+- The canvas no longer clones the cell and age grids every frame. Buffers are
+  handed to the view from a revision-tagged cache and returned afterwards, and
+  the population shown in the status bar is tracked incrementally.
+- Recorded GIF frames use a `VecDeque`, so trimming the frame budget is O(1)
+  instead of shifting the whole vector.
+- Undo history has a 128 MiB byte budget in addition to its snapshot count.
+- Langton's Ant updates two cells per step instead of copying the whole grid.
+- Grid dimensions are clamped inside `sim::make_automaton`, covering config,
+  CLI, resize and state-file paths from one place.
+- Mode dispatch goes through a `Mode` enum, so adding an automaton forces every
+  `match` to be updated instead of falling back to Conway.
+- The duplicated brush/selection handling in the two canvases is shared, and
+  grid rows are reset through one `reset_derived_state` helper.
+
 ## [6.1.0] — 2026-10-24
 
 ### Added

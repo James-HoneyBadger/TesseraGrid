@@ -39,7 +39,8 @@ rename, themes, timeline and pattern editor.
   budget) and fork history by playing on from an earlier frame.
 - **Pattern editor** — draw a draft pattern on a 16–48 cell canvas, rotate, flip
   or invert it, then stamp it into the grid or copy it as RLE.
-- **Undo / redo** — 100 snapshots covering every edit, including generation.
+- **Undo / redo** — 100 snapshots (capped at 128 MB) covering every edit,
+  including generation and the ant's position.
 - **Live statistics** — population chart with axes, peak/min/average, CSV export.
 - **Session state** — save/load `.tessera` JSON files (legacy `.lifegrid` files still load); UI settings persist.
 - **Multi-threaded stepping** — neighbour counting and cell updates run on all
@@ -167,6 +168,8 @@ cargo run --release -- --steps 100 --stats
 
 ### Keyboard
 
+`Ctrl` below is `Cmd` on macOS.
+
 | Action | Shortcut |
 |--------|----------|
 | Play / pause | `Space` |
@@ -183,6 +186,7 @@ cargo run --release -- --steps 100 --stats
 | Copy / cut / paste selection | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Clear selected cells | `Delete` |
 | Deselect | `Escape` |
+| Close a dialog | `Escape` |
 | Save / open state | `Ctrl+S` / `Ctrl+O` |
 | Export PNG | `Ctrl+E` |
 | Pattern editor | `Ctrl+P` |
@@ -256,7 +260,8 @@ TesseraGrid/              # repository name
 ├── tessera-grid-rs/       # crate: tessera-grid, binary: tessera
 │   ├── Cargo.toml
 │   ├── src/
-│   │   ├── main.rs          # CLI dispatch + GUI launch
+│   │   ├── lib.rs           # library root: engine + UI, used by tests/benches
+│   │   ├── main.rs          # thin entry point: CLI dispatch + GUI launch
 │   │   ├── cli/             # headless command line
 │   │   │   ├── mod.rs       # shared setup and CLI tests
 │   │   │   ├── args.rs      # clap argument definitions
