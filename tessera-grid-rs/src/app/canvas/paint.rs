@@ -31,6 +31,23 @@ fn line_cells(from: (i64, i64), to: (i64, i64)) -> Vec<(i64, i64)> {
 }
 
 impl TesseraGridApp {
+    /// Paint or erase a single grid coordinate, extending the stroke from the
+    /// previous one.
+    ///
+    /// Out-of-grid coordinates are ignored, which keeps drags that leave the
+    /// canvas harmless. One undo checkpoint is recorded per stroke.
+    pub(super) fn paint_at(&mut self, x: i64, y: i64, state: u8, gw: usize, gh: usize) {
+        if x < 0 || y < 0 || x >= gw as i64 || y >= gh as i64 {
+            return;
+        }
+        if !self.drag_undo_pushed {
+            self.push_undo();
+            self.drag_undo_pushed = true;
+        }
+        self.paint_line(self.last_paint_cell, (x, y), state);
+        self.last_paint_cell = Some((x, y));
+    }
+
     /// Paint a brush stroke along the line between two cells.
     pub(super) fn paint_line(&mut self, from: Option<(i64, i64)>, to: (i64, i64), state: u8) {
         let (gw, gh) = (self.sim.width() as i64, self.sim.height() as i64);

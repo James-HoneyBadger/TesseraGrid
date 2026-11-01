@@ -43,8 +43,10 @@ impl TesseraGridApp {
         let (gw, gh) = (self.sim.width(), self.sim.height());
         let cell_size = (self.cell_size as u32).clamp(1, 8);
         let delay = 1000 / self.speed.clamp(1, 30);
-        match export::export_gif(self.sim.frames(), gw, gh, cell_size, delay, &path) {
-            Ok(()) => self.set_status(format!("GIF saved ({} frames)", self.sim.frame_count())),
+        let frame_count = self.sim.frame_count();
+        let result = export::export_gif(self.sim.frames(), gw, gh, cell_size, delay, &path);
+        match result {
+            Ok(()) => self.set_status(format!("GIF saved ({frame_count} frames)")),
             Err(err) => self.set_status(format!("GIF failed: {err}")),
         }
     }
@@ -54,7 +56,11 @@ impl TesseraGridApp {
             Ok(text) => {
                 let pattern = rle::parse(&text);
                 if pattern.is_empty() {
-                    self.set_status("Clipboard: no valid RLE found");
+                    self.set_status(if pattern.truncated {
+                        "Clipboard: RLE too large to import"
+                    } else {
+                        "Clipboard: no valid RLE found"
+                    });
                     return;
                 }
                 let (gw, gh) = (self.sim.width(), self.sim.height());
@@ -67,12 +73,20 @@ impl TesseraGridApp {
                         }
                     }
                 });
-                self.set_status(format!(
-                    "RLE imported: {}×{}, rule {}",
-                    pattern.width,
-                    pattern.height,
-                    pattern.rule.as_deref().unwrap_or("none")
-                ));
+                let rule = pattern.rule.as_deref().unwrap_or("none");
+                if pattern.truncated {
+                    self.set_status(format!(
+                        "RLE imported: {}×{}, rule {rule} (truncated at {} cells)",
+                        pattern.width,
+                        pattern.height,
+                        rle::MAX_CELLS
+                    ));
+                } else {
+                    self.set_status(format!(
+                        "RLE imported: {}×{}, rule {rule}",
+                        pattern.width, pattern.height
+                    ));
+                }
             }
             Err(err) => self.set_status(format!("Clipboard error: {err}")),
         }

@@ -30,7 +30,7 @@ use crate::core::{AppConfig, BoundaryMode};
 use crate::export;
 use crate::patterns;
 use crate::rle;
-use crate::sim::{RuleSpec, Simulation};
+use crate::sim::{RenderFrame, RuleSpec, Simulation};
 
 /// Upper bound on simulation steps per rendered frame, so that high speeds do
 /// not starve the UI thread.
@@ -177,11 +177,7 @@ impl TesseraGridApp {
         };
         sim.load_pattern(&pattern);
 
-        let custom_rule_str = {
-            let b: String = cfg.custom_birth.iter().map(|n| n.to_string()).collect();
-            let s: String = cfg.custom_survival.iter().map(|n| n.to_string()).collect();
-            format!("B{}/S{}", b, s)
-        };
+        let custom_rule_str = LifeLike::format_bs(&cfg.custom_birth, &cfg.custom_survival);
 
         Self {
             sim,

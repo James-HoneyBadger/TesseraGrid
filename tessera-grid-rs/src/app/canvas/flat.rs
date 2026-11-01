@@ -3,7 +3,7 @@
 use super::*;
 
 impl TesseraGridApp {
-    pub(super) fn ui_canvas_flat(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn ui_canvas_flat(&mut self, ui: &mut egui::Ui, frame: RenderFrame) {
         let avail = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(avail, Sense::click_and_drag());
 
@@ -23,7 +23,8 @@ impl TesseraGridApp {
             CornerRadius::ZERO
         };
 
-        let (gw, gh, cells_snapshot, age_snapshot) = self.sim.render_snapshot();
+        let (gw, gh) = (frame.width, frame.height);
+        let (cells_snapshot, age_snapshot) = (&frame.cells, &frame.ages);
         let paint_state = self.paint_state.min(self.sim.max_state());
 
         // ── Mouse-wheel zoom ─────────────────────────────────────────────────
@@ -182,14 +183,7 @@ impl TesseraGridApp {
                 if let Some(pos) = response.interact_pointer_pos() {
                     let gx = ((pos.x - rect.left() + vox) / cs) as i64;
                     let gy_v = ((pos.y - rect.top() + voy) / cs) as i64;
-                    if gx >= 0 && gx < gw as i64 && gy_v >= 0 && gy_v < gh as i64 {
-                        if !self.drag_undo_pushed {
-                            self.push_undo();
-                            self.drag_undo_pushed = true;
-                        }
-                        self.paint_line(self.last_paint_cell, (gx, gy_v), paint_state);
-                        self.last_paint_cell = Some((gx, gy_v));
-                    }
+                    self.paint_at(gx, gy_v, paint_state, gw, gh);
                 }
             }
 
@@ -198,14 +192,7 @@ impl TesseraGridApp {
                 if let Some(pos) = response.interact_pointer_pos() {
                     let gx = ((pos.x - rect.left() + vox) / cs) as i64;
                     let gy_v = ((pos.y - rect.top() + voy) / cs) as i64;
-                    if gx >= 0 && gx < gw as i64 && gy_v >= 0 && gy_v < gh as i64 {
-                        if !self.drag_undo_pushed {
-                            self.push_undo();
-                            self.drag_undo_pushed = true;
-                        }
-                        self.paint_line(self.last_paint_cell, (gx, gy_v), 0);
-                        self.last_paint_cell = Some((gx, gy_v));
-                    }
+                    self.paint_at(gx, gy_v, 0, gw, gh);
                 }
             }
 
@@ -222,11 +209,7 @@ impl TesseraGridApp {
                 if let Some(pos) = response.interact_pointer_pos() {
                     let gx = ((pos.x - rect.left() + vox) / cs) as i64;
                     let gy = ((pos.y - rect.top() + voy) / cs) as i64;
-                    if self.selection_anchor.is_none() {
-                        self.selection_anchor = Some((gx, gy));
-                    }
-                    let (ax, ay) = self.selection_anchor.unwrap();
-                    self.selection = Some((ax.min(gx), ay.min(gy), ax.max(gx), ay.max(gy)));
+                    self.extend_selection(gx, gy, gw, gh);
                 }
             }
             if !response.dragged_by(egui::PointerButton::Primary) {
@@ -241,5 +224,7 @@ impl TesseraGridApp {
                 self.selection = None;
             }
         }
+
+        self.sim.return_render_frame(frame);
     }
 }

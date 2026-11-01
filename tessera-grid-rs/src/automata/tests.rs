@@ -157,3 +157,46 @@ fn every_mode_supports_empty_and_random_soup() {
         );
     }
 }
+
+#[test]
+fn every_name_round_trips_through_the_enum() {
+    for mode in Mode::ALL {
+        assert_eq!(Mode::from_name(mode.name()), Some(mode));
+        assert!(
+            !mode.description().is_empty(),
+            "{} has no description",
+            mode.name()
+        );
+    }
+}
+
+#[test]
+fn all_modes_lists_every_variant_once() {
+    assert_eq!(ALL_MODES.len(), Mode::ALL.len());
+    for (name, mode) in ALL_MODES.iter().zip(Mode::ALL) {
+        assert_eq!(*name, mode.name());
+    }
+    for mode in Mode::ALL {
+        assert_eq!(
+            ALL_MODES
+                .iter()
+                .filter(|name| **name == mode.name())
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn every_mode_builds_an_automaton_with_the_right_name() {
+    for mode in Mode::ALL {
+        let automaton = make_automaton(mode.name(), 8, 8);
+        assert_eq!(automaton.name(), mode.name());
+    }
+}
+
+#[test]
+fn unknown_mode_names_fall_back_to_conway() {
+    let automaton = make_automaton("not a mode", 8, 8);
+    assert_eq!(automaton.name(), Mode::Conway.name());
+}

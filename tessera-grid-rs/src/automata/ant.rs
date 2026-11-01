@@ -2,6 +2,9 @@ use crate::core::{BoundaryMode, Grid};
 
 use super::Automaton;
 
+/// Cell state used to draw the ant on top of the binary grid.
+const ANT_MARKER: u8 = 2;
+
 /// Langton's Ant – single ant on a binary grid.
 pub struct LangtonsAnt {
     /// True cell states (0/1).
@@ -29,7 +32,21 @@ impl LangtonsAnt {
 
     fn sync_display(&mut self) {
         self.display.cells.clone_from(&self.base.cells);
-        self.display.set(self.ant_y, self.ant_x, 2);
+        self.display.set(self.ant_y, self.ant_x, ANT_MARKER);
+    }
+
+    /// Reinstate the display value of one cell from the base grid.
+    fn restore_display_cell(&mut self, y: usize, x: usize) {
+        let value = self.base.get(y, x);
+        self.display.set(y, x, value);
+    }
+
+    fn encode_aux(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(17);
+        out.extend_from_slice(&(self.ant_x as u64).to_le_bytes());
+        out.extend_from_slice(&(self.ant_y as u64).to_le_bytes());
+        out.push(self.ant_dir);
+        out
     }
 }
 
@@ -50,6 +67,7 @@ impl Automaton for LangtonsAnt {
 
         let h = self.base.height;
         let w = self.base.width;
+        let (from_y, from_x) = (self.ant_y, self.ant_x);
         match self.ant_dir {
             0 => self.ant_y = (self.ant_y + h - 1) % h,
             1 => self.ant_x = (self.ant_x + 1) % w,
@@ -57,7 +75,10 @@ impl Automaton for LangtonsAnt {
             _ => self.ant_x = (self.ant_x + w - 1) % w,
         }
 
-        self.sync_display();
+        // Only the vacated cell and the ant's new cell change, so updating them
+        // directly keeps a step O(1) instead of copying the whole grid.
+        self.restore_display_cell(from_y, from_x);
+        self.display.set(self.ant_y, self.ant_x, ANT_MARKER);
     }
 
     fn reset(&mut self) {
@@ -117,5 +138,31 @@ impl Automaton for LangtonsAnt {
     }
     fn randomize(&mut self, _seed: u64) {
         self.reset();
+    }
+
+    fn state_cells(&self) -> Vec<u8> {
+        // `get_grid` returns the display grid, which carries the ant marker.
+        self.base.cells.clone()
+    }
+
+    fn aux_state(&self) -> Vec<u8> {
+        self.encode_aux()
+    }
+
+    fn set_aux_state(&mut self, state: &[u8]) {
+        if state.len() != 17 {
+            return;
+        }
+        let x = u64::from_le_bytes(state[0..8].try_into().unwrap_or_default());
+        let y = u64::from_le_bytes(state[8..16].try_into().unwrap_or_default());
+        let dir = state[16];
+        let (w, h) = (self.base.width, self.base.height);
+        if w == 0 || h == 0 || dir > 3 {
+            return;
+        }
+        self.ant_x = (x as usize) % w;
+        self.ant_y = (y as usize) % h;
+        self.ant_dir = dir;
+        self.sync_display();
     }
 }

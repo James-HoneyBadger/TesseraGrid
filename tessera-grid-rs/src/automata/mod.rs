@@ -35,14 +35,18 @@ use crate::core::{BoundaryMode, Grid};
 ///
 /// Mutating the grid is deliberately limited to [`Automaton::set_cells`],
 /// [`Automaton::edit_cells`] and [`Automaton::paint`] so that automata which keep
-/// auxiliary state (for example Langton's Ant) can stay in sync. `get_grid_mut`
-/// exists only for the default implementations; callers outside this module
-/// must use the safe helpers.
+/// auxiliary state (for example Langton's Ant) can stay in sync.
 pub trait Automaton {
     fn name(&self) -> &'static str;
     fn step(&mut self);
     fn reset(&mut self);
     fn get_grid(&self) -> &Grid;
+    /// Raw mutable access used only by this trait's default implementations.
+    ///
+    /// Callers elsewhere must use [`Automaton::set_cells`],
+    /// [`Automaton::edit_cells`] or [`Automaton::paint`]; writing through this
+    /// handle bypasses the resynchronisation those perform.
+    #[doc(hidden)]
     fn get_grid_mut(&mut self) -> &mut Grid;
     fn load_pattern(&mut self, pattern: &str);
     fn available_patterns(&self) -> &'static [&'static str];
@@ -63,6 +67,28 @@ pub trait Automaton {
     fn supports_boundary(&self) -> bool {
         true
     }
+
+    /// Canonical simulation state, excluding render-only decoration.
+    ///
+    /// [`Automaton::get_grid`] may include visual markers (Langton's Ant draws
+    /// itself as state 2). Undo and timeline snapshots must store what the
+    /// automaton steps from instead, or restoring a snapshot would feed render
+    /// artefacts back into the simulation.
+    fn state_cells(&self) -> Vec<u8> {
+        self.get_grid().cells.clone()
+    }
+
+    /// Opaque state that lives outside the grid, captured by undo snapshots.
+    ///
+    /// Automata that keep extra state (for example Langton's Ant heading) must
+    /// round-trip it here, otherwise undo would restore cells but not the
+    /// automaton that operates on them.
+    fn aux_state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    /// Restore state produced by [`Automaton::aux_state`].
+    fn set_aux_state(&mut self, _state: &[u8]) {}
 
     /// Fill the grid with a reproducible pseudo-random population.
     fn randomize(&mut self, seed: u64) {
@@ -112,6 +138,97 @@ pub trait Automaton {
 // Factory
 // ---------------------------------------------------------------------------
 
+/// Every automaton the simulator can build, in display order.
+///
+/// A single enum keeps mode dispatch exhaustive: adding a variant forces every
+/// `match` to be updated instead of silently falling through to Conway. The
+/// human-readable names are the strings used by the UI, the CLI and saved
+/// configs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Conway,
+    HighLife,
+    Hexagonal,
+    Immigration,
+    Rainbow,
+    Ant,
+    Wireworld,
+    BriansBrain,
+    Generations,
+    Custom,
+}
+
+impl Mode {
+    pub const ALL: [Mode; 10] = [
+        Mode::Conway,
+        Mode::HighLife,
+        Mode::Hexagonal,
+        Mode::Immigration,
+        Mode::Rainbow,
+        Mode::Ant,
+        Mode::Wireworld,
+        Mode::BriansBrain,
+        Mode::Generations,
+        Mode::Custom,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Conway => "Conway's Game of Life",
+            Mode::HighLife => "High Life",
+            Mode::Hexagonal => "Hexagonal Life",
+            Mode::Immigration => "Immigration Game",
+            Mode::Rainbow => "Rainbow Game",
+            Mode::Ant => "Langton's Ant",
+            Mode::Wireworld => "Wireworld",
+            Mode::BriansBrain => "Brian's Brain",
+            Mode::Generations => "Generations",
+            Mode::Custom => "Custom Rules",
+        }
+    }
+
+    /// Short human-readable description, shown in the sidebar.
+    pub fn description(self) -> &'static str {
+        match self {
+            Mode::Conway => "Classic B3/S23 Life on a square grid.",
+            Mode::HighLife => "B36/S23 — adds a replicator to Conway's rules.",
+            Mode::Hexagonal => "B2/S34 on a hexagonal (odd-r) neighbourhood.",
+            Mode::Immigration => "Two-colour Life; newborns inherit the majority colour.",
+            Mode::Rainbow => "Six-colour cyclic variant of Life.",
+            Mode::Ant => "A single ant turns, flips cells, and walks the grid.",
+            Mode::Wireworld => "Four states: empty, head, tail, and conductor.",
+            Mode::BriansBrain => "Three states: off, firing, and refractory.",
+            Mode::Generations => "Life-like rules with fading decay states.",
+            Mode::Custom => "Any Life-like rule written in B/S notation.",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.name() == name)
+    }
+
+    /// `true` for modes whose B/S rule is supplied by the user.
+    pub fn uses_custom_rules(self) -> bool {
+        matches!(self, Mode::Custom)
+    }
+
+    /// Build the automaton for this mode.
+    pub fn build(self, width: usize, height: usize) -> Box<dyn Automaton> {
+        match self {
+            Mode::Conway => Box::new(ConwayLife::new(width, height)),
+            Mode::HighLife => Box::new(HighLife::new(width, height)),
+            Mode::Hexagonal => Box::new(HexagonalLife::new(width, height)),
+            Mode::Immigration => Box::new(ImmigrationGame::new(width, height)),
+            Mode::Rainbow => Box::new(RainbowGame::new(width, height)),
+            Mode::Ant => Box::new(LangtonsAnt::new(width, height)),
+            Mode::Wireworld => Box::new(Wireworld::new(width, height)),
+            Mode::BriansBrain => Box::new(BriansBrain::new(width, height)),
+            Mode::Generations => Box::new(Generations::new(width, height)),
+            Mode::Custom => Box::new(LifeLike::new(width, height, vec![3], vec![2, 3])),
+        }
+    }
+}
+
 /// All supported automaton modes in display order.
 pub const ALL_MODES: &[&str] = &[
     "Conway's Game of Life",
@@ -126,36 +243,17 @@ pub const ALL_MODES: &[&str] = &[
     "Custom Rules",
 ];
 
-/// Short human-readable description for each mode, shown in the sidebar.
+/// Short human-readable description for a mode name, shown in the sidebar.
 pub fn description(mode: &str) -> &'static str {
-    match mode {
-        "Conway's Game of Life" => "Classic B3/S23 Life on a square grid.",
-        "High Life" => "B36/S23 — adds a replicator to Conway's rules.",
-        "Hexagonal Life" => "B2/S34 on a hexagonal (odd-r) neighbourhood.",
-        "Immigration Game" => "Two-colour Life; newborns inherit the majority colour.",
-        "Rainbow Game" => "Six-colour cyclic variant of Life.",
-        "Langton's Ant" => "A single ant turns, flips cells, and walks the grid.",
-        "Wireworld" => "Four states: empty, head, tail, and conductor.",
-        "Brian's Brain" => "Three states: off, firing, and refractory.",
-        "Generations" => "Life-like rules with fading decay states.",
-        "Custom Rules" => "Any Life-like rule written in B/S notation.",
-        _ => "",
-    }
+    Mode::from_name(mode).map_or("", Mode::description)
 }
 
 /// Build a boxed automaton for the given mode string.
+///
+/// Unknown names fall back to Conway, which only matters for hand-edited config
+/// files: the UI and CLI both validate against [`ALL_MODES`] first.
 pub fn make_automaton(mode: &str, width: usize, height: usize) -> Box<dyn Automaton> {
-    match mode {
-        "Conway's Game of Life" => Box::new(ConwayLife::new(width, height)),
-        "High Life" => Box::new(HighLife::new(width, height)),
-        "Hexagonal Life" => Box::new(HexagonalLife::new(width, height)),
-        "Immigration Game" => Box::new(ImmigrationGame::new(width, height)),
-        "Rainbow Game" => Box::new(RainbowGame::new(width, height)),
-        "Langton's Ant" => Box::new(LangtonsAnt::new(width, height)),
-        "Wireworld" => Box::new(Wireworld::new(width, height)),
-        "Brian's Brain" => Box::new(BriansBrain::new(width, height)),
-        "Generations" => Box::new(Generations::new(width, height)),
-        "Custom Rules" => Box::new(LifeLike::new(width, height, vec![3], vec![2, 3])),
-        _ => Box::new(ConwayLife::new(width, height)),
-    }
+    Mode::from_name(mode)
+        .unwrap_or(Mode::Conway)
+        .build(width, height)
 }

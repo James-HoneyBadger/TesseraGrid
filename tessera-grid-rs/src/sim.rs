@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use crate::automata::{self, Automaton, LifeLike};
+use crate::automata::{self, Automaton, LifeLike, Mode};
 use crate::core::{BoundaryMode, Grid, Snapshot, UndoManager};
 
 /// Number of population samples kept for the statistics panel.
@@ -18,6 +18,12 @@ pub const TIMELINE_MAX_ENTRIES: usize = 512;
 /// Default byte budget for timeline snapshots.
 pub const DEFAULT_MAX_TIMELINE_BYTES: usize = 64 * 1024 * 1024;
 
+/// Largest grid side accepted from any source (config, CLI, state file).
+///
+/// Clamping here protects every constructor, including the ones fed by files
+/// and clipboard text, from multi-gigabyte allocations.
+pub const MAX_GRID_SIDE: usize = 4096;
+
 /// Build an automaton for `mode`, falling back to Conway for unknown names.
 pub fn make_automaton(
     mode: &str,
@@ -27,7 +33,10 @@ pub fn make_automaton(
     birth: &[u8],
     survival: &[u8],
 ) -> Box<dyn Automaton> {
-    let mut automaton: Box<dyn Automaton> = if mode == "Custom Rules" {
+    let width = width.clamp(1, MAX_GRID_SIDE);
+    let height = height.clamp(1, MAX_GRID_SIDE);
+    let uses_custom_rules = Mode::from_name(mode).is_some_and(Mode::uses_custom_rules);
+    let mut automaton: Box<dyn Automaton> = if uses_custom_rules {
         Box::new(LifeLike::new(
             width,
             height,
@@ -68,7 +77,7 @@ pub struct Simulation {
     age_grid: Vec<u32>,
     pop_history: VecDeque<u64>,
     pub record_frames: bool,
-    frame_buffer: Vec<Vec<u8>>,
+    frame_buffer: VecDeque<Vec<u8>>,
     frame_bytes: usize,
     pub max_frame_bytes: usize,
     /// Recent generations for the timeline scrubber, oldest first.
@@ -78,6 +87,32 @@ pub struct Simulation {
     /// newest one; `None` means "live".
     timeline_pos: Option<usize>,
     pub max_timeline_bytes: usize,
+    /// Bumped on every observable grid change, so derived data can be cached
+    /// between frames instead of recomputed.
+    revision: u64,
+    /// Live-cell count kept in step with the grid, so the status bar does not
+    /// rescan the grid every frame.
+    population: u64,
+    /// Reusable render buffers, refilled only when the revision changes.
+    render_cache: Option<RenderCache>,
+}
+
+/// Grid data handed to the canvas for one frame.
+///
+/// The buffers are owned by the cache and handed back after rendering, so a
+/// steady frame costs no allocation or grid copy.
+pub struct RenderFrame {
+    pub width: usize,
+    pub height: usize,
+    pub cells: Vec<u8>,
+    pub ages: Vec<u32>,
+    revision: u64,
+}
+
+struct RenderCache {
+    revision: u64,
+    cells: Vec<u8>,
+    ages: Vec<u32>,
 }
 
 impl Simulation {
@@ -98,6 +133,7 @@ impl Simulation {
         );
         automaton.load_pattern(pattern);
         let cells = automaton.get_grid().cells.len();
+        let population = automaton.get_grid().population() as u64;
         Self {
             automaton,
             mode: mode.to_owned(),
@@ -106,14 +142,29 @@ impl Simulation {
             age_grid: vec![0; cells],
             pop_history: VecDeque::with_capacity(POP_HISTORY),
             record_frames: false,
-            frame_buffer: Vec::new(),
+            frame_buffer: VecDeque::new(),
             frame_bytes: 0,
             max_frame_bytes: DEFAULT_MAX_FRAME_BYTES,
             timeline: VecDeque::new(),
             timeline_bytes: 0,
             timeline_pos: None,
             max_timeline_bytes: DEFAULT_MAX_TIMELINE_BYTES,
+            revision: 0,
+            population,
+            render_cache: None,
         }
+    }
+
+    /// Monotonic counter bumped whenever the grid changes.
+    ///
+    /// Views use it to reuse derived data (population, render buffers) instead
+    /// of recomputing or copying the grid every frame.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn bump(&mut self) {
+        self.revision += 1;
     }
 
     // ── Read access ──────────────────────────────────────────────────────────
@@ -131,7 +182,12 @@ impl Simulation {
     }
 
     pub fn population(&self) -> u64 {
-        self.grid().population() as u64
+        self.population
+    }
+
+    /// Recompute the live-cell count from the grid.
+    fn recount_population(&mut self) {
+        self.population = self.grid().population() as u64;
     }
 
     pub fn density(&self) -> f32 {
@@ -166,15 +222,48 @@ impl Simulation {
         self.automaton.available_patterns()
     }
 
-    /// Snapshot of everything the canvas needs to render one frame.
-    pub fn render_snapshot(&self) -> (usize, usize, Vec<u8>, Vec<u32>) {
+    /// Borrow the grid data the canvas needs for one frame.
+    ///
+    /// The buffers are moved out of the cache so the caller can keep mutating
+    /// `self` while rendering; hand them back with
+    /// [`Simulation::return_render_frame`]. The grid is only copied when it has
+    /// actually changed since the last frame.
+    pub fn take_render_frame(&mut self) -> RenderFrame {
+        let mut cache = self.render_cache.take().unwrap_or(RenderCache {
+            revision: u64::MAX,
+            cells: Vec::new(),
+            ages: Vec::new(),
+        });
         let grid = self.grid();
-        (
-            grid.width,
-            grid.height,
-            grid.cells.clone(),
-            self.age_grid.clone(),
-        )
+        let (width, height) = (grid.width, grid.height);
+        if cache.revision != self.revision
+            || cache.cells.len() != grid.cells.len()
+            || cache.ages.len() != grid.cells.len()
+        {
+            cache.cells.clear();
+            cache.cells.extend_from_slice(&grid.cells);
+            cache.ages.clear();
+            cache.ages.extend_from_slice(&self.age_grid);
+            cache.revision = self.revision;
+        }
+        RenderFrame {
+            width,
+            height,
+            cells: std::mem::take(&mut cache.cells),
+            ages: std::mem::take(&mut cache.ages),
+            revision: cache.revision,
+        }
+    }
+
+    /// Return buffers previously obtained from [`Simulation::take_render_frame`].
+    pub fn return_render_frame(&mut self, mut frame: RenderFrame) {
+        frame.cells.clear();
+        frame.ages.clear();
+        self.render_cache = Some(RenderCache {
+            revision: frame.revision,
+            cells: frame.cells,
+            ages: frame.ages,
+        });
     }
 
     pub fn pop_history(&self) -> &VecDeque<u64> {
@@ -193,8 +282,12 @@ impl Simulation {
         self.undo.can_redo()
     }
 
-    pub fn frames(&self) -> &[Vec<u8>] {
-        &self.frame_buffer
+    /// Recorded frames in play order.
+    ///
+    /// `&mut self` is required because a `VecDeque` may be stored in two
+    /// disjoint slices; this makes it contiguous so the result is one slice.
+    pub fn frames(&mut self) -> &[Vec<u8>] {
+        self.frame_buffer.make_contiguous()
     }
 
     pub fn frame_count(&self) -> usize {
@@ -216,40 +309,37 @@ impl Simulation {
         self.automaton.step();
         self.generation += 1;
 
-        let cell_count = {
-            let grid = self.automaton.get_grid();
-            if self.age_grid.len() != grid.cells.len() {
-                self.age_grid = vec![0; grid.cells.len()];
+        let grid = self.automaton.get_grid();
+        if self.age_grid.len() != grid.cells.len() {
+            self.age_grid = vec![0; grid.cells.len()];
+        }
+        let age = &mut self.age_grid;
+        let mut pop = 0u64;
+        for (index, &state) in grid.cells.iter().enumerate() {
+            if state != 0 {
+                age[index] = age[index].saturating_add(1);
+                pop += 1;
+            } else {
+                age[index] = 0;
             }
-            let age = &mut self.age_grid;
-            let mut pop = 0u64;
-            for (index, &state) in grid.cells.iter().enumerate() {
-                if state != 0 {
-                    age[index] = age[index].saturating_add(1);
-                    pop += 1;
-                } else {
-                    age[index] = 0;
-                }
-            }
-            self.pop_history.push_back(pop);
-            if self.pop_history.len() > POP_HISTORY {
-                self.pop_history.pop_front();
-            }
-            grid.cells.len()
-        };
+        }
+        self.population = pop;
+        self.pop_history.push_back(pop);
+        if self.pop_history.len() > POP_HISTORY {
+            self.pop_history.pop_front();
+        }
 
         if self.record_frames {
             let cells = self.automaton.get_grid().cells.clone();
             self.frame_bytes += cells.len();
-            self.frame_buffer.push(cells);
+            self.frame_buffer.push_back(cells);
             while self.frame_bytes > self.max_frame_bytes && self.frame_buffer.len() > 1 {
-                if let Some(front) = self.frame_buffer.first() {
+                if let Some(front) = self.frame_buffer.pop_front() {
                     self.frame_bytes -= front.len();
                 }
-                self.frame_buffer.remove(0);
             }
         }
-        let _ = cell_count;
+        self.bump();
         self.record_timeline();
     }
 
@@ -270,11 +360,25 @@ impl Simulation {
     // ── Mutation ─────────────────────────────────────────────────────────────
 
     pub fn paint(&mut self, y: usize, x: usize, state: u8) {
+        let grid = self.automaton.get_grid();
+        if y >= grid.height || x >= grid.width {
+            return;
+        }
+        let before = grid.get(y, x);
         self.automaton.paint(y, x, state);
+        let after = self.automaton.get_grid().get(y, x);
+        if before == after {
+            return;
+        }
+        self.population -= u64::from(before != 0);
+        self.population += u64::from(after != 0);
+        self.bump();
     }
 
     pub fn edit_cells(&mut self, mut edit: impl FnMut(&mut [u8])) {
         self.automaton.edit_cells(&mut edit);
+        self.recount_population();
+        self.bump();
     }
 
     /// Replace the cell buffer, keeping derived data consistent.
@@ -283,23 +387,34 @@ impl Simulation {
         if self.age_grid.len() != cells.len() {
             self.age_grid = vec![0; cells.len()];
         }
+        self.recount_population();
+        self.bump();
+    }
+
+    /// Drop everything derived from the grid after a wholesale change.
+    ///
+    /// Every path that replaces the whole grid goes through here so no derived
+    /// buffer (ages, chart, frames, timeline, population) can be forgotten.
+    fn reset_derived_state(&mut self) {
+        self.age_grid = vec![0; self.grid().cells.len()];
+        self.pop_history.clear();
+        self.frame_buffer.clear();
+        self.frame_bytes = 0;
+        self.clear_timeline();
+        self.recount_population();
+        self.bump();
     }
 
     /// Fill the grid deterministically from `seed` and reset derived state.
     pub fn randomize(&mut self, seed: u64) {
         self.automaton.randomize(seed);
         self.generation = 0;
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.pop_history.clear();
-        self.frame_buffer.clear();
-        self.frame_bytes = 0;
-        self.clear_timeline();
+        self.reset_derived_state();
     }
 
     pub fn load_pattern(&mut self, pattern: &str) {
         self.automaton.load_pattern(pattern);
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.clear_timeline();
+        self.reset_derived_state();
     }
 
     pub fn set_boundary(&mut self, boundary: BoundaryMode) {
@@ -310,11 +425,7 @@ impl Simulation {
     pub fn reset(&mut self) {
         self.automaton.reset();
         self.generation = 0;
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.pop_history.clear();
-        self.frame_buffer.clear();
-        self.frame_bytes = 0;
-        self.clear_timeline();
+        self.reset_derived_state();
     }
 
     /// Rebuild the automaton for a new mode/pattern, resetting all derived state.
@@ -337,16 +448,14 @@ impl Simulation {
         self.mode = mode.to_owned();
         self.automaton.load_pattern(pattern);
         self.generation = 0;
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.pop_history.clear();
         self.undo.clear();
-        self.frame_buffer.clear();
-        self.frame_bytes = 0;
-        self.clear_timeline();
+        self.reset_derived_state();
     }
 
     /// Resize the grid, optionally preserving the overlapping region.
     pub fn resize(&mut self, width: usize, height: usize, rules: RuleSpec<'_>, preserve: bool) {
+        let width = width.clamp(1, MAX_GRID_SIDE);
+        let height = height.clamp(1, MAX_GRID_SIDE);
         let old = if preserve {
             let grid = self.grid();
             Some((grid.width, grid.height, grid.cells.clone()))
@@ -374,21 +483,15 @@ impl Simulation {
         }
         self.automaton = automaton;
         self.generation = 0;
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.pop_history.clear();
         self.undo.clear();
-        self.frame_buffer.clear();
-        self.frame_bytes = 0;
-        self.clear_timeline();
+        self.reset_derived_state();
     }
 
     // ── Undo / redo ──────────────────────────────────────────────────────────
 
     fn snapshot(&self) -> Snapshot {
-        Snapshot {
-            cells: self.grid().cells.clone(),
-            generation: self.generation,
-        }
+        Snapshot::new(self.automaton.state_cells(), self.generation)
+            .with_aux(self.automaton.aux_state())
     }
 
     /// Record the current state so the next mutation can be undone.
@@ -420,11 +523,19 @@ impl Simulation {
     }
 
     fn restore(&mut self, snapshot: Snapshot) {
-        self.automaton.set_cells(&snapshot.cells);
-        self.generation = snapshot.generation;
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.pop_history.clear();
+        self.apply_snapshot(&snapshot);
         self.clear_timeline();
+    }
+
+    /// Put the grid and automaton back into a recorded state.
+    fn apply_snapshot(&mut self, snapshot: &Snapshot) {
+        self.automaton.set_cells(&snapshot.cells);
+        self.automaton.set_aux_state(&snapshot.aux);
+        self.generation = snapshot.generation;
+        self.age_grid = vec![0; snapshot.cells.len()];
+        self.pop_history.clear();
+        self.recount_population();
+        self.bump();
     }
 
     // ── Timeline ─────────────────────────────────────────────────────────────
@@ -450,10 +561,7 @@ impl Simulation {
         let Some(snapshot) = self.timeline.get(index).cloned() else {
             return false;
         };
-        self.automaton.set_cells(&snapshot.cells);
-        self.generation = snapshot.generation;
-        self.age_grid = vec![0; self.grid().cells.len()];
-        self.pop_history.clear();
+        self.apply_snapshot(&snapshot);
         // The newest entry *is* the live state, so scrubbing to it leaves the
         // timeline live rather than pinned.
         self.timeline_pos = (index + 1 < self.timeline.len()).then_some(index);
@@ -476,7 +584,7 @@ impl Simulation {
         if let Some(position) = self.timeline_pos.take() {
             while self.timeline.len() > position + 1 {
                 if let Some(entry) = self.timeline.pop_back() {
-                    self.timeline_bytes -= entry.cells.len();
+                    self.timeline_bytes -= entry.byte_len();
                 }
             }
         }
@@ -484,7 +592,7 @@ impl Simulation {
 
     fn record_timeline(&mut self) {
         let snapshot = self.snapshot();
-        self.timeline_bytes += snapshot.cells.len();
+        self.timeline_bytes += snapshot.byte_len();
         self.timeline.push_back(snapshot);
         while self.timeline.len() > TIMELINE_MAX_ENTRIES
             || (self.timeline_bytes > self.max_timeline_bytes && self.timeline.len() > 1)
@@ -492,7 +600,7 @@ impl Simulation {
             let Some(entry) = self.timeline.pop_front() else {
                 break;
             };
-            self.timeline_bytes -= entry.cells.len();
+            self.timeline_bytes -= entry.byte_len();
         }
         self.timeline_pos = None;
     }
