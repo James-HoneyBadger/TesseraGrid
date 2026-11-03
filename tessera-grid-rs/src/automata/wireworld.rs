@@ -21,7 +21,38 @@ impl Wireworld {
     }
 }
 
+/// Cells between the junction cell and the far end of the stem.
+const JUNCTION_STEM: usize = 6;
+
 impl Wireworld {
+    /// Draw a Y junction: one stem wire meeting two diagonal branches.
+    ///
+    /// Returns the junction cell, or `None` when the grid is too small.
+    ///
+    /// Like every passive Wireworld junction this is bidirectional: a pulse on
+    /// either branch reaches the stem, and a pulse on the stem reaches both
+    /// branches. One-way devices need a diode, which is a larger engineered
+    /// circuit; the [`Self::load_clock`] ring is the timing primitive those
+    /// circuits are built from.
+    fn draw_junction(&mut self) -> Option<(usize, usize)> {
+        let (w, h) = (self.grid.width, self.grid.height);
+        if w < JUNCTION_STEM + 5 || h < 7 {
+            return None;
+        }
+        let (cx, cy) = (w / 2, h / 2);
+        // Stem, including the junction cell itself.
+        for x in (cx - JUNCTION_STEM)..=cx {
+            self.grid.set(cy, x, 3);
+        }
+        // Two branches leaving the junction diagonally, which keeps them away
+        // from the stem cells that would otherwise fire a step early.
+        for step in 1..=2 {
+            self.grid.set(cy - step, cx + step, 3);
+            self.grid.set(cy + step, cx + step, 3);
+        }
+        Some((cx, cy))
+    }
+
     /// A conductor ring with one electron travelling around it.
     ///
     /// The ring is a Manhattan diamond, so every wire cell touches exactly two
@@ -97,6 +128,14 @@ impl Automaton for Wireworld {
                 self.load_clock();
                 return;
             }
+            "Junction" => {
+                if let Some((cx, cy)) = self.draw_junction() {
+                    // A lone head at the far end of the stem; a tail would have
+                    // to sit behind it, outside the drawn wire.
+                    self.grid.set(cy, cx - JUNCTION_STEM, 1);
+                }
+                return;
+            }
             _ => {}
         }
         let mut rng = rand::rng();
@@ -113,7 +152,7 @@ impl Automaton for Wireworld {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Clock", "Random Soup", "Empty"]
+        &["Clock", "Junction", "Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {
@@ -192,5 +231,61 @@ mod tests {
             0,
             "no ring fits, so nothing is drawn"
         );
+    }
+}
+
+#[cfg(test)]
+mod junction_tests {
+    use super::*;
+
+    /// True when any cell in the grid is a head.
+    fn heads(wire: &Wireworld) -> usize {
+        wire.grid.cells.iter().filter(|&&cell| cell == 1).count()
+    }
+
+    fn ran_into_head(wire: &mut Wireworld, y: usize, x: usize, steps: usize) -> bool {
+        (0..steps).any(|_| {
+            wire.step();
+            wire.grid.get(y, x) == 1
+        })
+    }
+
+    #[test]
+    fn the_junction_splits_one_signal_into_both_branches() {
+        let mut wire = Wireworld::new(21, 15);
+        wire.load_pattern("Junction");
+        assert_eq!(heads(&wire), 1, "one pulse starts in the stem");
+
+        let (cx, cy) = (21 / 2, 15 / 2);
+        let mut up = false;
+        let mut down = false;
+        for _ in 0..20 {
+            wire.step();
+            up |= wire.grid.get(cy - 2, cx + 2) == 1;
+            down |= wire.grid.get(cy + 2, cx + 2) == 1;
+        }
+        assert!(up, "the upper branch received the signal");
+        assert!(down, "the lower branch received the signal");
+    }
+
+    #[test]
+    fn the_junction_feeds_the_stem_from_a_branch() {
+        let mut wire = Wireworld::new(21, 15);
+        let (cx, cy) = wire.draw_junction().expect("junction fits");
+        let far_end = (cy, cx - JUNCTION_STEM);
+
+        // Start on the upper branch tip instead of the stem.
+        wire.grid.set(cy - 2, cx + 2, 1);
+        assert!(
+            ran_into_head(&mut wire, far_end.0, far_end.1, 20),
+            "a pulse from a branch reaches the far end of the stem"
+        );
+    }
+
+    #[test]
+    fn a_small_grid_has_no_junction() {
+        let mut wire = Wireworld::new(6, 5);
+        assert!(wire.draw_junction().is_none());
+        assert_eq!(wire.grid.population(), 0);
     }
 }

@@ -46,6 +46,9 @@ impl eframe::App for TesseraGridApp {
             }
         }
 
+        // A sensitivity experiment advances the main grid and its probe together.
+        self.advance_sensitivity(ctx);
+
         // Generation-rate sampling (half-second window).
         let elapsed = now.duration_since(self.gen_sample_time).as_secs_f32();
         if elapsed >= 0.5 {
@@ -68,6 +71,7 @@ impl eframe::App for TesseraGridApp {
         self.ui_help_modal(&ctx);
         self.ui_gallery(&ctx);
         self.ui_editor(&ctx);
+        self.ui_analysis(&ctx);
         self.ui_about(&ctx);
 
         let colors = self.theme.colors();

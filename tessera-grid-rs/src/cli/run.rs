@@ -46,6 +46,10 @@ pub fn run(cli: &Cli) -> Result<(), String> {
     if let Some(rule) = elementary {
         rule_spec = rule_spec.with_elementary(rule);
     }
+    if let Some(count) = cli.replicates {
+        return run_replicates(cli, &mode, width, height, rule_spec, count);
+    }
+
     let mut sim = Simulation::new(&mode, width, height, rule_spec, "");
     // Timeline snapshots are a UI affordance; a scripted run does not need one
     // grid clone per generation.
@@ -143,6 +147,108 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         )?;
     }
 
+    Ok(())
+}
+
+/// Repeat a randomised run with different seeds and summarise the spread.
+///
+/// One random soup is an anecdote; a scientist wants to know whether two rules
+/// differ by more than run-to-run noise.
+fn run_replicates(
+    cli: &Cli,
+    mode: &str,
+    width: usize,
+    height: usize,
+    rules: RuleSpec<'_>,
+    count: u32,
+) -> Result<(), String> {
+    use rayon::prelude::*;
+
+    let steps = cli.steps();
+    if steps == 0 {
+        return Err("--replicates needs --steps to run generations".to_owned());
+    }
+    let count = u64::from(count.clamp(1, 10_000));
+    let base_seed = cli.seed.unwrap_or(1);
+
+    let samples: Vec<crate::core::analysis::Metrics> = (0..count)
+        .into_par_iter()
+        .map(|index| {
+            let mut sim = Simulation::new(mode, width, height, rules, "");
+            sim.record_timeline = false;
+            sim.detect_cycles = true;
+            sim.randomize(base_seed.wrapping_add(index));
+            sim.run_steps(steps, || false);
+            sim.metrics()
+        })
+        .collect();
+
+    let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len().max(1) as f64;
+    let deviation = |values: &[f64]| {
+        let average = mean(values);
+        (values
+            .iter()
+            .map(|value| (value - average).powi(2))
+            .sum::<f64>()
+            / values.len().max(1) as f64)
+            .sqrt()
+    };
+
+    let populations: Vec<f64> = samples.iter().map(|m| m.population as f64).collect();
+    let entropies: Vec<f64> = samples.iter().map(|m| m.entropy).collect();
+    let periods: Vec<u64> = samples
+        .iter()
+        .filter_map(|m| m.cycle.map(|cycle| cycle.period))
+        .collect();
+
+    emitln!(
+        "# replicates: {count} (seeds {base_seed}..{}), random soup per seed, {steps} generations",
+        base_seed.wrapping_add(count - 1)
+    );
+    emitln!(
+        "population: mean {:.1}  sd {:.1}  min {:.0}  max {:.0}",
+        mean(&populations),
+        deviation(&populations),
+        populations.iter().copied().fold(f64::INFINITY, f64::min),
+        populations
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+    );
+    emitln!(
+        "entropy:    mean {:.4}  sd {:.4}",
+        mean(&entropies),
+        deviation(&entropies)
+    );
+    emitln!("cycles:     {} of {count} settled", periods.len());
+    if !periods.is_empty() {
+        let mut histogram: std::collections::BTreeMap<u64, usize> =
+            std::collections::BTreeMap::new();
+        for period in &periods {
+            *histogram.entry(*period).or_default() += 1;
+        }
+        let summary: Vec<String> = histogram
+            .iter()
+            .map(|(period, count)| format!("period {period}: {count}"))
+            .collect();
+        emitln!("periods:    {}", summary.join(", "));
+    }
+
+    if let Some(path) = &cli.analysis_csv {
+        let mut out = String::from("seed,population,density,entropy,cycle_period\n");
+        for (index, metrics) in samples.iter().enumerate() {
+            out.push_str(&format!(
+                "{},{},{:.6},{:.6},{}\n",
+                base_seed.wrapping_add(index as u64),
+                metrics.population,
+                metrics.density,
+                metrics.entropy,
+                metrics.cycle.map_or(0, |cycle| cycle.period)
+            ));
+        }
+        std::fs::write(path, out)
+            .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+    }
     Ok(())
 }
 

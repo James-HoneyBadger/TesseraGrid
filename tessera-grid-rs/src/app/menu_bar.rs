@@ -86,6 +86,17 @@ impl TesseraGridApp {
                 }
             });
 
+            ui.menu_button("Analysis", |ui| {
+                if ui.button("Sensitivity experiment…").clicked() {
+                    self.show_analysis = true;
+                    ui.close();
+                }
+                if ui.button("Elementary rule sweep…").clicked() {
+                    self.show_analysis = true;
+                    ui.close();
+                }
+            });
+
             ui.menu_button("View", |ui| {
                 if ui.button("Fit to window").clicked() {
                     self.pending_fit = true;

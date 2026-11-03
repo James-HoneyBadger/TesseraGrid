@@ -201,6 +201,41 @@ fn a_closed_stdout_does_not_panic() {
     );
 }
 
+#[test]
+fn replicates_report_mean_and_spread() {
+    let dir = temp_dir("replicates");
+    let csv = dir.join("replicates.csv");
+
+    let output = bin()
+        .args(["--replicates", "4", "--steps", "5", "--seed", "1"])
+        .arg("--analysis-csv")
+        .arg(&csv)
+        .output()
+        .expect("run tessera");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("replicates: 4 (seeds 1..4)"), "{stdout}");
+    assert!(stdout.contains("population: mean"), "{stdout}");
+    assert!(stdout.contains("entropy:"), "{stdout}");
+
+    let text = std::fs::read_to_string(&csv).expect("read csv");
+    assert!(text.starts_with("seed,population,density,entropy,cycle_period"));
+    assert_eq!(text.lines().count(), 5, "header plus four replicates");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn replicates_without_steps_is_an_error() {
+    let output = bin()
+        .args(["--replicates", "2"])
+        .output()
+        .expect("run tessera");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--steps"), "{stderr}");
+}
+
 fn size(path: &Path) -> u64 {
     std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
 }

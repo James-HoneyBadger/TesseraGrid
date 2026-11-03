@@ -36,6 +36,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   building block.
 - CLI output ignores a closed pipe, so `tessera --analyze | head` no longer
   aborts with "failed printing to stdout".
+- **Analysis panel in the GUI** (Analysis menu, or the statistics card): a
+  sensitivity experiment that plots the separation of two grids one cell apart,
+  and a sweep of all 256 elementary rules with a heuristic class column and CSV
+  copy. The experiment advances in slices so the window keeps repainting.
+- **`--replicates N`**: repeat a randomised run over N seeds and report the mean
+  and standard deviation of population and entropy, plus the distribution of
+  cycle periods.
+- **Wireworld `Junction` pattern**: a verified Y junction that splits one signal
+  into two branches and merges a branch signal back into the stem.
 
 ### Fixed
 - **Immigration newborns took the wrong colour.** The rule averaged the three

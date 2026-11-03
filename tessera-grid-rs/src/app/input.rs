@@ -6,6 +6,15 @@ impl TesseraGridApp {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
+        // A sensitivity experiment drives the grid itself; any shortcut (undo,
+        // step, randomize) would desynchronise the control from its probe.
+        if self
+            .sensitivity
+            .as_ref()
+            .is_some_and(|experiment| !experiment.finished)
+        {
+            return;
+        }
         // Space would also activate a focused button, so let the widget win.
         let widget_focused = ctx.memory(|memory| memory.focused().is_some());
 

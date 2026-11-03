@@ -88,6 +88,9 @@ impl TesseraGridApp {
                                         "Random Soup" => "Random 15% soup",
                                         "Empty" => "Clears the grid",
                                         "Clock" => "An electron circulating a conductor ring",
+                                        "Junction" => {
+                                            "One wire splitting into two (and merging back)"
+                                        }
                                         "Single Cell" => "One cell: the classic space-time cone",
                                         "Random Row" => "Random 50% first row",
                                         _ => {

@@ -95,6 +95,13 @@ impl TesseraGridApp {
                         {
                             self.export_stats_csv();
                         }
+                        if ui
+                            .small_button("Analysis…")
+                            .on_hover_text("Sensitivity experiment and rule sweep")
+                            .clicked()
+                        {
+                            self.show_analysis = true;
+                        }
                     });
                 });
         });

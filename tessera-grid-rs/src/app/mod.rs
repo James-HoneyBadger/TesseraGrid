@@ -4,6 +4,7 @@
 //! [`crate::sim::Simulation`] so the GUI and CLI share one engine.
 
 mod actions;
+mod analysis;
 mod canvas;
 mod config;
 mod dialogs;
@@ -133,6 +134,12 @@ pub struct TesseraGridApp {
     show_editor: bool,
     editor: patterns::PatternDraft,
 
+    // ── Analysis panel ───────────────────────────────────────────────────────
+    show_analysis: bool,
+    sensitivity: Option<analysis::Sensitivity>,
+    sensitivity_generations: u32,
+    sweep: Option<analysis::SweepResult>,
+
     // ── Help & gallery modals ────────────────────────────────────────────────
     show_help: bool,
     show_gallery: bool,
@@ -251,6 +258,10 @@ impl TesseraGridApp {
             hover_cell: None,
             show_editor: false,
             editor: patterns::PatternDraft::new(24),
+            show_analysis: false,
+            sensitivity: None,
+            sensitivity_generations: 120,
+            sweep: None,
             show_help: false,
             show_gallery: false,
             show_about: false,

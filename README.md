@@ -45,6 +45,9 @@ rename, themes, timeline and pattern editor.
   including generation and the ant's position.
 - **Live statistics** — population chart with axes, peak/min/average, entropy,
   bounding box, cycle period, and CSV export.
+- **Analysis panel** — run a sensitivity experiment (two grids one cell apart,
+  plotted generation by generation) or sweep all 256 elementary rules, from the
+  menu or the statistics card.
 - **Universal computation** — Rule 110 (Turing complete), plus the Game of Life,
   Wireworld (with a circulating-signal clock) and Langton's Ant, with the tooling
   to study them: seeded runs, cycle detection, parameter sweeps and
@@ -147,6 +150,7 @@ straightforward. With no arguments the window opens.
 | `--analysis-csv <PATH>` | Write per-generation metrics as CSV |
 | `--divergence <N>` | Measure how quickly two runs differing by one cell separate |
 | `--sweep-elementary` | Run all 256 elementary rules and print one metrics row each |
+| `--replicates <N>` | Repeat a random run over N seeds and report mean and standard deviation |
 | `--list-modes` | List modes and exit |
 
 Examples:
@@ -302,19 +306,37 @@ tessera --sweep-elementary --width 128 --height 96 --steps 95 \
     --analysis-csv elementary-sweep.csv
 ```
 
+```bash
+# Is the difference between two rules bigger than run-to-run noise?
+tessera --replicates 20 --steps 200 --seed 1 --analysis-csv replicates.csv
+```
+
 The sweep is the fastest way to see Wolfram's classification: rule 0 settles to a
 period-1 fixed point, rule 90 collapses to a fixed point after drawing a
 Sierpiński triangle, rule 30 keeps entropy near 1 bit/cell, and rule 110 keeps
 producing structure without ever repeating.
 
-### Wireworld clock
+Single runs are anecdotes. `--replicates N` runs the same configuration over `N`
+seeds and reports the mean and standard deviation of population and entropy, plus
+how many runs settled into a cycle and with which periods — the number you need
+before claiming that one rule is denser than another.
 
-The **Clock** pattern is a diamond ring of conductors with one electron: exactly
-one head and one tail circulate forever, one cell per generation, and the ring
-returns to its starting state after `4 × radius` steps. It is a verified
-building block for sequential logic — square corners would put a conductor
-diagonally next to the head and spawn a second signal, which is why the ring is
-diamond-shaped.
+### Wireworld devices
+
+Two patterns are verified by simulation tests:
+
+- **Clock** — a diamond ring of conductors with one electron. Exactly one head
+  and one tail circulate forever, one cell per generation, returning to the
+  starting state after `4 × radius` steps. Square corners would put a conductor
+  diagonally next to the head and spawn a second signal, which is why the ring is
+  a diamond.
+- **Junction** — one stem wire meeting two diagonal branches. A pulse on the stem
+  splits into both branches; a pulse on either branch reaches the stem.
+
+Junctions are bidirectional, as all passive Wireworld wiring is. One-way devices
+(diodes, and therefore AND gates) need a larger engineered circuit with tuned
+branch delays; the clock and the junction are the primitives those circuits are
+built from, and this project will not ship a gate it cannot verify.
 
 ---
 

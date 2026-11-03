@@ -103,6 +103,11 @@ pub struct Cli {
     #[arg(long)]
     pub sweep_elementary: bool,
 
+    /// Repeat the run with different seeds and report mean and standard
+    /// deviation, so a single run is not mistaken for evidence.
+    #[arg(long, value_name = "N")]
+    pub replicates: Option<u32>,
+
     /// List the available automaton modes and exit.
     #[arg(long)]
     pub list_modes: bool,
@@ -135,6 +140,7 @@ impl Cli {
             || self.analysis_csv.is_some()
             || self.divergence.is_some()
             || self.sweep_elementary
+            || self.replicates.is_some()
     }
 
     /// Generations to simulate, applying the documented default.
