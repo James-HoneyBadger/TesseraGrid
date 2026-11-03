@@ -51,9 +51,9 @@ pub struct Cli {
     #[arg(long, value_name = "MODE")]
     pub boundary: Option<String>,
 
-    /// Generations to simulate before exporting.
-    #[arg(long, default_value_t = 0)]
-    pub steps: u64,
+    /// Generations to simulate before exporting (default 0).
+    #[arg(long, value_name = "N")]
+    pub steps: Option<u64>,
 
     /// Fill the grid with a random soup before stepping.
     #[arg(long)]
@@ -75,17 +75,29 @@ pub struct Cli {
     #[arg(long, value_name = "PATH")]
     pub rle: Option<PathBuf>,
 
-    /// Frames per second for --gif.
-    #[arg(long, default_value_t = 10)]
-    pub gif_fps: u32,
+    /// Frames per second for --gif (default 10).
+    #[arg(long, value_name = "N")]
+    pub gif_fps: Option<u32>,
 
-    /// Pixels per cell for PNG/GIF export.
-    #[arg(long, default_value_t = 4)]
-    pub cell_size: u32,
+    /// Pixels per cell for PNG/GIF export (default 4).
+    #[arg(long, value_name = "N")]
+    pub cell_size: Option<u32>,
 
     /// Print final statistics to stdout.
     #[arg(long)]
     pub stats: bool,
+
+    /// Print entropy, bounds and cycle information after the run.
+    #[arg(long)]
+    pub analyze: bool,
+
+    /// Write per-generation metrics to this CSV file.
+    #[arg(long, value_name = "PATH")]
+    pub analysis_csv: Option<PathBuf>,
+
+    /// Measure how fast two runs that differ by one cell diverge, for N steps.
+    #[arg(long, value_name = "N")]
+    pub divergence: Option<u64>,
 
     /// List the available automaton modes and exit.
     #[arg(long)]
@@ -100,7 +112,7 @@ impl Cli {
     pub fn is_headless(&self) -> bool {
         self.headless
             || self.list_modes
-            || self.steps > 0
+            || self.steps.is_some()
             || self.randomize
             || self.seed.is_some()
             || self.png.is_some()
@@ -113,6 +125,26 @@ impl Cli {
             || self.width.is_some()
             || self.height.is_some()
             || self.boundary.is_some()
+            || self.cell_size.is_some()
+            || self.gif_fps.is_some()
+            || self.analyze
+            || self.analysis_csv.is_some()
+            || self.divergence.is_some()
+    }
+
+    /// Generations to simulate, applying the documented default.
+    pub fn steps(&self) -> u64 {
+        self.steps.unwrap_or(0)
+    }
+
+    /// Pixels per cell for image export, applying the documented default.
+    pub fn cell_size(&self) -> u32 {
+        self.cell_size.unwrap_or(4)
+    }
+
+    /// GIF frame rate, applying the documented default.
+    pub fn gif_fps(&self) -> u32 {
+        self.gif_fps.unwrap_or(10)
     }
 
     /// Grid width, applying the documented default.

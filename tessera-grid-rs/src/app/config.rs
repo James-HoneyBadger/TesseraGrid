@@ -31,6 +31,7 @@ impl TesseraGridApp {
             },
             brush_size: self.brush_size,
             iso_height: self.iso_height,
+            elementary_rule: self.elementary_rule,
         };
         if let Err(err) = cfg.save() {
             eprintln!("Tessera Grid: {err}");

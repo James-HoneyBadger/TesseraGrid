@@ -105,8 +105,14 @@ fn the_ant_marker_is_always_a_single_cell() {
     let mut sim = ant(16, 16);
     for _ in 0..50 {
         sim.step();
-        let markers = sim.grid().cells.iter().filter(|&&state| state == 2).count();
+        // The marker is a render overlay: the canonical grid stays binary.
+        let display = sim.display_cells();
+        let markers = display.iter().filter(|&&state| state == 2).count();
         assert_eq!(markers, 1, "exactly one cell should carry the ant marker");
+        assert!(
+            sim.grid().cells.iter().all(|&state| state <= 1),
+            "the simulation grid must never store the marker"
+        );
     }
 }
 
@@ -189,4 +195,179 @@ fn render_frames_track_the_grid_and_reuse_their_buffers() {
     let frame = sim.take_render_frame();
     assert_eq!(frame.cells[12 + 1], 1);
     sim.return_render_frame(frame);
+}
+
+#[test]
+fn population_never_counts_the_ant_marker() {
+    let mut sim = ant(16, 16);
+    assert_eq!(sim.population(), 0, "an empty grid has no population");
+    sim.step();
+    assert_eq!(sim.population(), 1, "one flipped cell, not the marker too");
+    assert_eq!(sim.population(), sim.grid().population() as u64);
+}
+
+#[test]
+fn out_of_range_cells_are_clamped_before_stepping() {
+    let mut sim = ant(8, 8);
+    // Simulates a hand-written state file or a paste from a richer mode.
+    sim.set_cells(&[2u8; 64]);
+    sim.step();
+    assert!(
+        sim.grid().cells.iter().all(|&state| state <= 1),
+        "clamping must keep the grid binary"
+    );
+
+    let mut wire = Simulation::new(
+        "Wireworld",
+        6,
+        6,
+        RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+        "Empty",
+    );
+    wire.set_cells(&[9u8; 36]);
+    wire.step();
+    assert!(wire.grid().cells.iter().all(|&state| state <= 3));
+}
+
+#[test]
+fn saved_ant_state_round_trips_with_position_and_heading() {
+    let mut sim = ant(24, 24);
+    sim.run_steps(9, || false);
+    let cells = sim.state_cells();
+    let aux = sim.aux_state();
+    assert_eq!(aux.len(), 17, "position and heading are captured");
+    let generation = sim.generation;
+
+    sim.run_steps(9, || false);
+    let later = sim.state_cells();
+
+    sim.restore_state(&cells, &aux, generation);
+    assert_eq!(sim.generation, 9);
+    assert_eq!(sim.state_cells(), cells, "cells restore exactly");
+    assert_eq!(
+        sim.population(),
+        cells.iter().filter(|&&c| c > 0).count() as u64
+    );
+
+    // Replaying from the restored state must retrace the same history; this
+    // fails if the ant's position and heading were not restored.
+    sim.run_steps(9, || false);
+    assert_eq!(sim.state_cells(), later);
+}
+
+#[test]
+fn timeline_recording_is_optional() {
+    let mut sim = conway(20, 20);
+    sim.record_timeline = false;
+    sim.randomize(4);
+    sim.run_steps(5, || false);
+    assert_eq!(sim.timeline_len(), 0, "nothing is recorded");
+
+    sim.record_timeline = true;
+    sim.step();
+    assert_eq!(
+        sim.timeline_len(),
+        2,
+        "enabling recording seeds the pre-step state"
+    );
+}
+
+#[test]
+fn render_frames_carry_the_marker_but_not_the_grid() {
+    let mut sim = ant(12, 12);
+    sim.step();
+    let frame = sim.take_render_frame();
+    let markers = frame.cells.iter().filter(|&&state| state == 2).count();
+    assert_eq!(markers, 1, "the canvas still draws the ant");
+    assert!(sim.grid().cells.iter().all(|&state| state <= 1));
+    sim.return_render_frame(frame);
+
+    // An unchanged grid reuses the buffer contents instead of copying again.
+    let frame = sim.take_render_frame();
+    assert_eq!(frame.cells.iter().filter(|&&state| state == 2).count(), 1);
+    sim.return_render_frame(frame);
+}
+
+#[test]
+fn elementary_rules_fill_a_space_time_diagram() {
+    let mut sim = Simulation::new(
+        "Elementary 1D",
+        64,
+        32,
+        RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]).with_elementary(110),
+        "Single Cell",
+    );
+    assert_eq!(sim.rule_string(), "W110");
+    assert_eq!(sim.automaton_name(), "Elementary 1D");
+
+    sim.run_steps(31, || false);
+    let frontier = &sim.grid().cells[31 * 64..32 * 64];
+    let live = frontier.iter().filter(|&&cell| cell > 0).count() as u64;
+    assert!(live > 0, "rule 110 keeps producing cells");
+    assert_eq!(sim.population(), live, "only the newest row is population");
+    assert!((sim.density() - live as f32 / 64.0).abs() < f32::EPSILON);
+
+    // Once the diagram is full it keeps scrolling.
+    let before = sim.grid().cells.clone();
+    sim.step();
+    assert_eq!(&sim.grid().cells[..31 * 64], &before[64..]);
+    assert!(sim.grid().cells.iter().all(|&cell| cell <= 1));
+}
+
+#[test]
+fn the_elementary_rule_can_change_without_clearing_the_diagram() {
+    let mut sim = Simulation::new(
+        "Elementary 1D",
+        32,
+        8,
+        RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]).with_elementary(110),
+        "Single Cell",
+    );
+    sim.run_steps(3, || false);
+    let cells = sim.grid().cells.clone();
+    assert!(sim.set_rules(&[30], &[]), "elementary rules are settable");
+    assert_eq!(sim.rule_string(), "W30");
+    assert_eq!(
+        sim.grid().cells,
+        cells,
+        "changing the rule keeps the diagram"
+    );
+
+    sim.step();
+    assert_ne!(sim.grid().cells, cells, "the new rule takes effect");
+}
+
+#[test]
+fn metrics_report_entropy_bounds_and_cycles() {
+    let mut sim = conway(20, 20);
+    sim.load_pattern("Blinker");
+    sim.detect_cycles = true;
+    assert_eq!(sim.cycle(), None, "nothing observed yet");
+
+    sim.run_steps(6, || false);
+    let cycle = sim.cycle().expect("a blinker cycles");
+    assert_eq!(cycle.period, 2, "blinker period");
+
+    let metrics = sim.metrics();
+    assert_eq!(metrics.generation, 6);
+    assert_eq!(metrics.population, sim.population());
+    assert!(
+        metrics.entropy > 0.0 && metrics.entropy < 1.0,
+        "entropy = {}",
+        metrics.entropy
+    );
+    let (x0, y0, x1, y1) = metrics.bbox.expect("blinker has bounds");
+    assert_eq!(
+        (x1 - x0 + 1, y1 - y0 + 1),
+        (3, 1),
+        "a blinker is three by one"
+    );
+}
+
+#[test]
+fn cycle_detection_stays_off_until_enabled() {
+    let mut sim = conway(20, 20);
+    sim.load_pattern("Blinker");
+    sim.run_steps(6, || false);
+    assert_eq!(sim.cycle(), None);
 }

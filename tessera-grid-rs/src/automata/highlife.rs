@@ -1,6 +1,6 @@
 use rand::RngExt;
 
-use crate::core::{BoundaryMode, Grid};
+use crate::core::{BoundaryMode, Grid, NeighborBuffers};
 
 use super::Automaton;
 
@@ -8,6 +8,7 @@ use super::Automaton;
 pub struct HighLife {
     grid: Grid,
     boundary: BoundaryMode,
+    neighbors: NeighborBuffers,
 }
 
 impl HighLife {
@@ -15,6 +16,7 @@ impl HighLife {
         Self {
             grid: Grid::new(width, height),
             boundary: BoundaryMode::Wrap,
+            neighbors: NeighborBuffers::default(),
         }
     }
 }
@@ -25,9 +27,14 @@ impl Automaton for HighLife {
     }
 
     fn step(&mut self) {
-        let neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        self.grid.update_cells(|i, state| {
-            let n = neighbors[i];
+        let boundary = self.boundary;
+        let Self {
+            grid, neighbors, ..
+        } = self;
+        grid.neighbor_counts_into(boundary, 1, neighbors);
+        let counts = &neighbors.counts;
+        grid.update_cells(|i, state| {
+            let n = counts[i];
             if state == 1 {
                 u8::from(n == 2 || n == 3)
             } else {

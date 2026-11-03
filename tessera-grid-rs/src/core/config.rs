@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::sim::{MAX_GRID_SIDE, MIN_GRID_SIDE};
 use crate::theme::Theme;
 
 /// Current config schema version. Bump when a migration is required.
@@ -53,6 +54,9 @@ pub struct AppConfig {
     pub brush_size: u8,
     #[serde(default = "default_iso_height")]
     pub iso_height: f32,
+    /// Wolfram code for the Elementary 1D mode.
+    #[serde(default = "default_elementary_rule")]
+    pub elementary_rule: u8,
 }
 
 fn default_config_version() -> u32 {
@@ -78,6 +82,9 @@ fn default_brush_size() -> u8 {
 }
 fn default_iso_height() -> f32 {
     1.0
+}
+fn default_elementary_rule() -> u8 {
+    crate::automata::elementary::DEFAULT_RULE
 }
 
 impl Default for AppConfig {
@@ -105,6 +112,7 @@ impl Default for AppConfig {
             tool_mode: "Paint".into(),
             brush_size: 1,
             iso_height: 1.0,
+            elementary_rule: default_elementary_rule(),
         }
     }
 }
@@ -132,13 +140,22 @@ impl AppConfig {
                     cfg.sanitize();
                     (cfg, None)
                 }
-                Err(err) => (
-                    Self::default(),
-                    Some(format!(
-                        "Config at {} is invalid ({err}); using defaults",
-                        path.display()
-                    )),
-                ),
+                Err(err) => {
+                    // Keep the unparseable file: the next save would otherwise
+                    // overwrite settings the user could still repair by hand.
+                    let backup = path.with_extension("json.bak");
+                    let note = match std::fs::copy(&path, &backup) {
+                        Ok(_) => format!(" (saved a copy to {})", backup.display()),
+                        Err(_) => String::new(),
+                    };
+                    (
+                        Self::default(),
+                        Some(format!(
+                            "Config at {} is invalid ({err}); using defaults{note}",
+                            path.display()
+                        )),
+                    )
+                }
             };
         }
 
@@ -161,8 +178,8 @@ impl AppConfig {
 
     /// Clamp values into the ranges the UI supports.
     pub fn sanitize(&mut self) {
-        self.grid_width = self.grid_width.clamp(10, 1000);
-        self.grid_height = self.grid_height.clamp(10, 1000);
+        self.grid_width = self.grid_width.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+        self.grid_height = self.grid_height.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
         self.cell_size = self.cell_size.clamp(1.0, 64.0);
         self.speed = self.speed.clamp(1, 200);
         self.panel_width = self.panel_width.clamp(160.0, 420.0);
@@ -293,14 +310,16 @@ mod tests {
     #[test]
     fn sanitize_clamps_out_of_range_values() {
         let mut cfg = AppConfig {
-            grid_width: 5,
+            grid_width: 0,
+            grid_height: 99_999,
             speed: 9_999,
             brush_size: 200,
             panel_width: 5.0,
             ..AppConfig::default()
         };
         cfg.sanitize();
-        assert_eq!(cfg.grid_width, 10);
+        assert_eq!(cfg.grid_width, MIN_GRID_SIDE);
+        assert_eq!(cfg.grid_height, MAX_GRID_SIDE);
         assert_eq!(cfg.speed, 200);
         assert_eq!(cfg.brush_size, 8);
         assert_eq!(cfg.panel_width, 160.0);

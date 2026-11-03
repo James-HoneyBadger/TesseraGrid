@@ -2,14 +2,30 @@
 
 use super::*;
 
+/// Current `.tessera` file schema version.
+const STATE_VERSION: u32 = 2;
+
+fn state_version() -> u32 {
+    STATE_VERSION
+}
+
 /// Grid snapshot written to `.tessera` state files.
+///
+/// `cells` is the automaton's *canonical* state: render-only markers such as
+/// the ant are not stored, so a saved file can never feed an artefact back into
+/// the simulation on load. `aux` carries the automaton state that lives outside
+/// the grid.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct SavedState {
+    #[serde(default = "state_version")]
+    version: u32,
     automaton: String,
     generation: u64,
     width: usize,
     height: usize,
     cells: Vec<u8>,
+    #[serde(default)]
+    aux: Vec<u8>,
 }
 
 impl SavedState {
@@ -20,13 +36,20 @@ impl SavedState {
     /// cell count must also match the declared size, otherwise the grid would
     /// be silently left empty.
     fn validate(&self) -> Result<(), String> {
-        if !(1..=crate::sim::MAX_GRID_SIDE).contains(&self.width)
-            || !(1..=crate::sim::MAX_GRID_SIDE).contains(&self.height)
+        if self.version > STATE_VERSION {
+            return Err(format!(
+                "file version {} is newer than this build understands ({STATE_VERSION})",
+                self.version
+            ));
+        }
+        if !(crate::sim::MIN_GRID_SIDE..=crate::sim::MAX_GRID_SIDE).contains(&self.width)
+            || !(crate::sim::MIN_GRID_SIDE..=crate::sim::MAX_GRID_SIDE).contains(&self.height)
         {
             return Err(format!(
-                "grid size {}×{} is outside 1–{}",
+                "grid size {}×{} is outside {}–{}",
                 self.width,
                 self.height,
+                crate::sim::MIN_GRID_SIDE,
                 crate::sim::MAX_GRID_SIDE
             ));
         }
@@ -53,7 +76,7 @@ impl TesseraGridApp {
             return;
         };
         let cell_size = (self.cell_size as u32).max(1);
-        match export::export_png(self.sim.grid(), cell_size, &path) {
+        match export::export_png(&self.sim.display_grid(), cell_size, &path) {
             Ok(()) => self.set_status(format!("Saved {}", path.display())),
             Err(err) => self.set_status(format!("Export failed: {err}")),
         }
@@ -156,16 +179,15 @@ impl TesseraGridApp {
             .add_filter("Tessera Grid state", &["tessera", "lifegrid"])
             .save_file()
         {
-            let (w, h, cells) = {
-                let g = self.sim.grid();
-                (g.width, g.height, g.cells.clone())
-            };
+            let (w, h) = (self.sim.width(), self.sim.height());
             let state = SavedState {
+                version: STATE_VERSION,
                 automaton: self.selected_mode.clone(),
                 generation: self.sim.generation,
                 width: w,
                 height: h,
-                cells,
+                cells: self.sim.state_cells(),
+                aux: self.sim.aux_state(),
             };
             match serde_json::to_string_pretty(&state) {
                 Ok(text) => match std::fs::write(&path, &text) {
@@ -197,12 +219,14 @@ impl TesseraGridApp {
                                 self.selected_boundary,
                                 &self.custom_birth,
                                 &self.custom_survival,
-                            ),
+                            )
+                            .with_elementary(self.elementary_rule),
                             "",
                         );
-                        self.sim.set_cells(&state.cells);
-                        self.sim.generation = state.generation;
-                        self.selected_mode = state.automaton;
+                        self.sim
+                            .restore_state(&state.cells, &state.aux, state.generation);
+                        self.selected_mode =
+                            automata::canonical_mode_name(&state.automaton).to_owned();
                         self.selected_pattern = self
                             .sim
                             .available_patterns()
@@ -226,17 +250,73 @@ impl TesseraGridApp {
 
 #[cfg(test)]
 mod tests {
-    use super::SavedState;
+    use super::{SavedState, STATE_VERSION};
     use crate::sim::MAX_GRID_SIDE;
 
     fn state(width: usize, height: usize, cells: Vec<u8>) -> SavedState {
         SavedState {
+            version: STATE_VERSION,
             automaton: "Conway's Game of Life".to_owned(),
             generation: 0,
             width,
             height,
             cells,
+            aux: Vec::new(),
         }
+    }
+
+    #[test]
+    fn an_ant_file_round_trips_without_carrying_the_marker() {
+        use crate::core::BoundaryMode;
+        use crate::sim::{RuleSpec, Simulation};
+
+        let mut sim = Simulation::new(
+            "Langton's Ant",
+            8,
+            8,
+            RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+            "Empty",
+        );
+        sim.run_steps(5, || false);
+
+        let saved = SavedState {
+            version: STATE_VERSION,
+            automaton: "Langton's Ant".to_owned(),
+            generation: sim.generation,
+            width: 8,
+            height: 8,
+            cells: sim.state_cells(),
+            aux: sim.aux_state(),
+        };
+        assert!(
+            saved.cells.iter().all(|&state| state <= 1),
+            "the render marker must not reach the file"
+        );
+        assert_eq!(saved.aux.len(), 17, "ant position and heading are saved");
+
+        let text = serde_json::to_string(&saved).expect("serialise");
+        let loaded: SavedState = serde_json::from_str(&text).expect("deserialise");
+        loaded.validate().expect("valid");
+
+        let mut restored = Simulation::new(
+            &loaded.automaton,
+            loaded.width,
+            loaded.height,
+            RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+            "Empty",
+        );
+        restored.restore_state(&loaded.cells, &loaded.aux, loaded.generation);
+        // This used to panic with "attempt to subtract with overflow".
+        restored.step();
+        assert_eq!(restored.generation, 6);
+    }
+
+    #[test]
+    fn files_from_a_newer_build_are_rejected() {
+        let mut newer = state(4, 3, vec![0; 12]);
+        newer.version = STATE_VERSION + 1;
+        let err = newer.validate().expect_err("newer files are refused");
+        assert!(err.contains("newer"), "{err}");
     }
 
     #[test]

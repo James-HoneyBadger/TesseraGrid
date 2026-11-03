@@ -61,7 +61,8 @@ cargo build --release
    cargo fmt --all --check
    cargo clippy --all-targets -- -D warnings
    cargo test --all-targets
-   cargo deny check    # advisories, licenses, banned crates
+   cargo test --all-targets --release   # different overflow semantics
+   cargo deny check                     # advisories, licenses, banned crates
    ```
 
 5. **Open a pull request** against `master`.
@@ -98,7 +99,12 @@ cargo build --release
   real binary end to end.
 - UI-state helpers that are easy to get wrong (pattern drafts, timeline
   history) belong in their own `#[cfg(test)]` modules.
-- Run everything with `cargo test --all-targets`.
+- Run everything with `cargo test --all-targets`. Release-mode arithmetic is
+  covered by `cargo test --all-targets --release` in CI.
+- `cargo bench` prints a timing table for the neighbour-counting passes and a
+  full simulation step. Run it before and after touching the hot loops in
+  `core/grid.rs`, the automata or `Simulation::step`; the numbers in the review
+  notes were produced by it.
 - Coverage is measured in CI with `cargo llvm-cov --all-targets --lcov`; run the
   same command locally and inspect `lcov.info` if you add untested branches.
 

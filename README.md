@@ -7,7 +7,7 @@
 
 A fast, native cellular-automaton simulator built with **Rust** and **egui**.
 
-Tessera Grid runs ten classic and custom automata in one interactive window — with a
+Tessera Grid runs eleven classic and custom automata in one interactive window — with a
 pattern gallery, seeded random soups, custom B/S rules, an isometric 3-D view,
 RLE import/export, PNG/GIF capture, a live population chart, a timeline scrubber,
 an in-app pattern editor, and a headless CLI for scripted runs.
@@ -19,8 +19,9 @@ rename, themes, timeline and pattern editor.
 
 ## Features
 
-- **10 automata** — Conway, High Life, Hexagonal Life, Immigration, Rainbow,
-  Langton's Ant, Wireworld, Brian's Brain, Generations, and any custom B/S rule.
+- **11 automata** — Conway, High Life, Hexagonal Life, Elementary 1D (all 256
+  Wolfram rules), Immigration, Rainbow, Langton's Ant, Wireworld, Brian's Brain,
+  Generations, and any custom B/S rule.
 - **Direct manipulation** — paint with a 1–8 cell brush, interpolated strokes,
   right-click erase, region select/copy/cut/paste, wheel zoom, middle-drag pan.
 - **Pattern gallery** — searchable list of every pattern for the current mode,
@@ -42,7 +43,11 @@ rename, themes, timeline and pattern editor.
   or invert it, then stamp it into the grid or copy it as RLE.
 - **Undo / redo** — 100 snapshots (capped at 128 MB) covering every edit,
   including generation and the ant's position.
-- **Live statistics** — population chart with axes, peak/min/average, CSV export.
+- **Live statistics** — population chart with axes, peak/min/average, entropy,
+  bounding box, cycle period, and CSV export.
+- **Universal computation** — Rule 110 (Turing complete), plus the Game of Life,
+  Wireworld and Langton's Ant, with the tooling to study them: seeded runs,
+  cycle detection and sensitivity-to-perturbation experiments.
 - **Session state** — save/load `.tessera` JSON files (legacy `.lifegrid` files still load); UI settings persist.
 - **Multi-threaded stepping** — neighbour counting and cell updates run on all
   cores via Rayon.
@@ -124,11 +129,11 @@ straightforward. With no arguments the window opens.
 |------|-------------|
 | `--headless` | Never open a window |
 | `--mode <MODE>` | Automaton mode (see `--list-modes`) |
-| `--rule <B/S>` | Custom rule, e.g. `B36/S23`; implies Custom Rules |
+| `--rule <RULE>` | Custom rule (`B36/S23`) or Wolfram code (`W110`); selects the matching mode |
 | `--pattern <NAME>` | Starting pattern (defaults to the mode's first) |
 | `--width`, `--height` | Grid size in cells (default 100) |
 | `--boundary <wrap\|fixed\|reflect>` | Edge behaviour |
-| `--steps <N>` | Generations to simulate (default 0) |
+| `--steps <N>` | Generations to simulate (default 0; the flag alone implies headless) |
 | `--randomize` | Fill with a random soup |
 | `--seed <N>` | Seed for `--randomize` (implies it) |
 | `--png <PATH>` | Write a PNG snapshot |
@@ -137,6 +142,9 @@ straightforward. With no arguments the window opens.
 | `--cell-size <N>` | Pixels per cell for PNG/GIF (default 4) |
 | `--rle <PATH>` | Write the final grid as RLE |
 | `--stats` | Print final statistics |
+| `--analyze` | Print entropy, bounds, bounding box and cycle information |
+| `--analysis-csv <PATH>` | Write per-generation metrics as CSV |
+| `--divergence <N>` | Measure how quickly two runs differing by one cell separate |
 | `--list-modes` | List modes and exit |
 
 Examples:
@@ -211,19 +219,24 @@ Choose **Custom Rules** and type B/S notation, for example:
 
 ### Saving and exporting
 
-- **State files** (`.tessera`) are JSON containing the mode, generation, size,
-  and cell buffer; they load across versions, and legacy `.lifegrid` files can
-  still be opened.
+- **State files** (`.tessera`) are versioned JSON containing the mode,
+  generation, size, cell buffer, and automaton state that lives outside the grid
+  (Langton's Ant position and heading). Only canonical cell states are written —
+  render-only markers never reach a file — and legacy `.lifegrid` files still
+  open.
 - **RLE** uses standard Golly/LifeWiki syntax and carries the active rule in the
   header (`B36/S23`, `B2/S34H`, `WireWorld`, …). Imported documents are bounded:
   a single run may not exceed 1,000,000 cells and a document is capped at
   8,388,608, so a compact hostile file cannot exhaust memory. Truncation is
   reported in the status bar.
 - **State files** are validated before loading: a size outside 1–4096 per side,
-  or a cell count that disagrees with the declared size, is reported as a parse
-  error rather than allocated.
+  a cell count that disagrees with the declared size, or a file written by a
+  newer build is reported as an error rather than allocated.
 - **GIF** recording keeps the newest frames within a 256 MB budget so long runs
   cannot exhaust memory.
+- **Image export** is capped at 64 megapixels. A 1000×1000 grid at 64 px per cell
+  would need about 12 GB of pixels, so the export is refused with a message
+  instead of aborting the process.
 - **Configuration** is stored at:
   - Linux: `$XDG_CONFIG_HOME/tessera-grid/` or `~/.config/tessera-grid/`
   - macOS: `~/Library/Application Support/tessera-grid/`
@@ -244,6 +257,47 @@ Tessera Grid is the renamed LifeGrid project:
 
 ---
 
+## Computation and Analysis
+
+Four of the built-in systems can compute anything a Turing machine can:
+
+| System | Why it is universal | How to explore it |
+|--------|--------------------|-------------------|
+| Elementary 1D, rule 110 | Cook (2004) proved rule 110 simulates a universal Turing machine | `--rule W110`, or pick Elementary 1D and set rule 110 |
+| Conway's Game of Life | Logic gates, counters and a universal machine have been built from gliders | Draw gates or import RLE from LifeWiki |
+| Wireworld | Designed as an electronic-logic CA; gate libraries exist | The four states map directly onto wires, heads and tails |
+| Langton's Ant | Proven universal: it can simulate any Turing machine | Let it run past ~10,000 steps to watch the emergent highway |
+
+Rule 110 is the most compact demonstration: one binary row, three neighbours, a
+single 8-bit rule number. `tessera --rule W110 --width 160 --height 80 --steps 79
+--analyze` seeds one cell and prints the resulting space-time diagram's entropy.
+
+### Measuring what you see
+
+`--analyze` and the **Statistics** card report:
+
+- **Entropy** (`bits/cell`) — Shannon entropy of the state distribution. It rises
+  as a pattern fills the grid and saturates as the system randomises.
+- **Bounds** — the bounding box of live cells, so growth rates are measurable.
+- **Cycle** — cellular automata are finite and deterministic, so every run must
+  eventually repeat. The period and the transient length are reported as soon as
+  a state recurs (a blinker is period 2; a still life is period 1).
+- **Divergence** — `--divergence N` runs two copies that differ by one cell and
+  prints the Hamming distance per generation, ending with a growth rate. A
+  positive rate is the signature of chaos; a rate near zero means the rule is
+  stable under perturbation.
+
+```bash
+# Time series a scientist can plot
+tessera --rule W110 --width 200 --height 100 --steps 99 \
+    --analysis-csv rule110.csv --analyze
+
+# Sensitivity to initial conditions (chaotic rules grow, stable rules decay)
+tessera --pattern "Random Soup" --steps 0 --divergence 100 --seed 7
+```
+
+---
+
 ## Supported Automata
 
 | Mode | Rule | Boundary control |
@@ -251,6 +305,7 @@ Tessera Grid is the renamed LifeGrid project:
 | Conway's Game of Life | `B3/S23` | wrap / fixed / reflect |
 | High Life | `B36/S23` | wrap / fixed / reflect |
 | Hexagonal Life | `B2/S34H` (odd-r hex) | ignored (always wraps) |
+| Elementary 1D | `W0`–`W255` (Wolfram code) | wrap / fixed / reflect |
 | Immigration Game | two-colour `B3/S23` | wrap / fixed / reflect |
 | Rainbow Game | six-colour cyclic Life | wrap / fixed / reflect |
 | Langton's Ant | `LangtonsAnt` | ignored (always wraps) |

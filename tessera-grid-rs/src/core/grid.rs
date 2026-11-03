@@ -84,21 +84,39 @@ impl Grid {
     /// Compute the count of 8-neighbours whose value equals `check_val` for
     /// every cell, returning a flat `Vec<u8>` with the same layout.
     ///
+    /// Convenience wrapper around [`Grid::neighbor_counts_into`] that allocates
+    /// fresh buffers; the hot path should reuse [`NeighborBuffers`].
+    pub fn neighbor_counts(&self, boundary: BoundaryMode, check_val: u8) -> Vec<u8> {
+        let mut buf = NeighborBuffers::default();
+        self.neighbor_counts_into(boundary, check_val, &mut buf);
+        buf.counts
+    }
+
+    /// Compute the count of 8-neighbours whose value equals `check_val` for
+    /// every cell, writing into `buf.counts`.
+    ///
     /// The grid is traversed row by row in two additive passes (horizontal,
     /// then vertical) so the inner loops contain no per-cell division, modulo or
     /// boundary branching. This is roughly five times faster than resolving
     /// every neighbour coordinate individually.
-    pub fn neighbor_counts(&self, boundary: BoundaryMode, check_val: u8) -> Vec<u8> {
+    pub fn neighbor_counts_into(
+        &self,
+        boundary: BoundaryMode,
+        check_val: u8,
+        buf: &mut NeighborBuffers,
+    ) {
         let (w, h) = (self.width, self.height);
+        buf.counts.clear();
+        buf.row_totals.clear();
         if w == 0 || h == 0 {
-            return Vec::new();
+            return;
         }
         let cols = AxisWindow::new(w, boundary);
         let rows = AxisWindow::new(h, boundary);
 
         // Pass 1: sum the three horizontal neighbours of every cell.
-        let mut sums = vec![0u8; w * h];
-        for_each_row_pair(&mut sums, &self.cells, w, |out, row| {
+        buf.row_totals.resize(w * h, 0);
+        for_each_row_pair(&mut buf.row_totals, &self.cells, w, |out, row| {
             for x in 0..w {
                 let mut n = u8::from(row[x] == check_val);
                 if let Some(l) = cols.prev[x] {
@@ -113,69 +131,87 @@ impl Grid {
 
         // Pass 2: add the horizontal sums of the rows above and below, then
         // remove the cell itself (it was counted by its own row's centre).
-        let mut counts = vec![0u8; w * h];
-        for_each_row(&mut counts, w, |y, out| {
+        buf.counts.resize(w * h, 0);
+        let totals = &buf.row_totals;
+        for_each_row(&mut buf.counts, w, |y, out| {
             let above = rows.prev[y];
             let below = rows.next[y];
-            let centre = &sums[y * w..y * w + w];
+            let centre = &totals[y * w..y * w + w];
             let cells = &self.cells[y * w..y * w + w];
             for x in 0..w {
                 let mut n = centre[x] - u8::from(cells[x] == check_val);
                 if let Some(ay) = above {
-                    n += sums[ay * w + x];
+                    n += totals[ay * w + x];
                 }
                 if let Some(by) = below {
-                    n += sums[by * w + x];
+                    n += totals[by * w + x];
                 }
                 out[x] = n;
             }
         });
-        counts
     }
 
     /// Returns `(alive_count, color_sum)` neighbour arrays, used by
     /// multi-state automata like Immigration and Rainbow.
+    ///
+    /// Convenience wrapper around [`Grid::neighbor_stats_into`].
     pub fn neighbor_stats_alive(&self, boundary: BoundaryMode) -> (Vec<u8>, Vec<u32>) {
+        let mut buf = NeighborBuffers::default();
+        self.neighbor_stats_into(boundary, &mut buf);
+        (buf.counts, buf.sums)
+    }
+
+    /// Fill `buf.counts` with the number of live neighbours per cell and
+    /// `buf.sums` with the sum of their states.
+    pub fn neighbor_stats_into(&self, boundary: BoundaryMode, buf: &mut NeighborBuffers) {
         let (w, h) = (self.width, self.height);
+        buf.counts.clear();
+        buf.sums.clear();
+        buf.row_live.clear();
+        buf.row_values.clear();
         if w == 0 || h == 0 {
-            return (Vec::new(), Vec::new());
+            return;
         }
         let cols = AxisWindow::new(w, boundary);
         let rows = AxisWindow::new(h, boundary);
 
         // Two additive channels: live-neighbour count and colour-value sum.
-        let mut count_sums = vec![0u32; w * h];
-        let mut value_sums = vec![0u32; w * h];
-        for_each_row_pair(&mut count_sums, &self.cells, w, |out, row| {
+        buf.row_live.resize(w * h, 0);
+        for_each_row_pair(&mut buf.row_live, &self.cells, w, |out, row| {
             for x in 0..w {
                 out[x] = u32::from(row[x] > 0) + neighbour_sum(row, &cols, x, |v| u32::from(v > 0));
             }
         });
-        for_each_row_pair(&mut value_sums, &self.cells, w, |out, row| {
+        buf.row_values.resize(w * h, 0);
+        for_each_row_pair(&mut buf.row_values, &self.cells, w, |out, row| {
             for x in 0..w {
                 out[x] = u32::from(row[x]) + neighbour_sum(row, &cols, x, u32::from);
             }
         });
 
-        let mut counts = vec![0u8; w * h];
-        let mut sums = vec![0u32; w * h];
-        for_each_row(&mut counts, w, |y, out| {
-            let above = rows.prev[y];
-            let below = rows.next[y];
-            let base = y * w;
-            for x in 0..w {
-                let mut c = count_sums[base + x] - u32::from(self.cells[base + x] > 0);
-                if let Some(ay) = above {
-                    c += count_sums[ay * w + x];
+        buf.counts.resize(w * h, 0);
+        {
+            let count_sums = &buf.row_live;
+            for_each_row(&mut buf.counts, w, |y, out| {
+                let above = rows.prev[y];
+                let below = rows.next[y];
+                let base = y * w;
+                for x in 0..w {
+                    let mut c = count_sums[base + x] - u32::from(self.cells[base + x] > 0);
+                    if let Some(ay) = above {
+                        c += count_sums[ay * w + x];
+                    }
+                    if let Some(by) = below {
+                        c += count_sums[by * w + x];
+                    }
+                    out[x] = c as u8;
                 }
-                if let Some(by) = below {
-                    c += count_sums[by * w + x];
-                }
-                out[x] = c as u8;
-            }
-        });
+            });
+        }
 
-        for_each_row(&mut sums, w, |y, out| {
+        buf.sums.resize(w * h, 0);
+        let value_sums = &buf.row_values;
+        for_each_row(&mut buf.sums, w, |y, out| {
             let above = rows.prev[y];
             let below = rows.next[y];
             let base = y * w;
@@ -190,9 +226,26 @@ impl Grid {
                 out[x] = s;
             }
         });
-
-        (counts, sums)
     }
+}
+
+/// Reusable working buffers for neighbour counting.
+///
+/// Reusing one of these across simulation steps keeps the intermediate row sums
+/// and the output arrays allocated instead of allocating several grid-sized
+/// vectors per generation.
+#[derive(Default)]
+pub struct NeighborBuffers {
+    /// Neighbour count for every cell (output).
+    pub counts: Vec<u8>,
+    /// Sum of live neighbour states for every cell (output of the stats pass).
+    pub sums: Vec<u32>,
+    /// Horizontal sums of cells equal to the requested value.
+    row_totals: Vec<u8>,
+    /// Horizontal sums of live neighbours.
+    row_live: Vec<u32>,
+    /// Horizontal sums of neighbour states.
+    row_values: Vec<u32>,
 }
 
 /// Precomputed neighbour indices along one axis.

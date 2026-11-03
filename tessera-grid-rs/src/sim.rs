@@ -6,8 +6,11 @@
 
 use std::collections::VecDeque;
 
-use crate::automata::{self, Automaton, LifeLike, Mode};
-use crate::core::{BoundaryMode, Grid, Snapshot, UndoManager};
+use rayon::prelude::*;
+
+use crate::automata::{self, Automaton, Elementary1D, LifeLike, Mode};
+use crate::core::analysis::{self, Cycle, CycleWatcher, Metrics};
+use crate::core::{BoundaryMode, Grid, Snapshot, UndoManager, PARALLEL_CELL_THRESHOLD};
 
 /// Number of population samples kept for the statistics panel.
 pub const POP_HISTORY: usize = 500;
@@ -17,6 +20,9 @@ pub const DEFAULT_MAX_FRAME_BYTES: usize = 256 * 1024 * 1024;
 pub const TIMELINE_MAX_ENTRIES: usize = 512;
 /// Default byte budget for timeline snapshots.
 pub const DEFAULT_MAX_TIMELINE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Smallest grid side accepted from any source (config, CLI, state file).
+pub const MIN_GRID_SIDE: usize = 1;
 
 /// Largest grid side accepted from any source (config, CLI, state file).
 ///
@@ -29,24 +35,21 @@ pub fn make_automaton(
     mode: &str,
     width: usize,
     height: usize,
-    boundary: BoundaryMode,
-    birth: &[u8],
-    survival: &[u8],
+    rules: RuleSpec<'_>,
 ) -> Box<dyn Automaton> {
-    let width = width.clamp(1, MAX_GRID_SIDE);
-    let height = height.clamp(1, MAX_GRID_SIDE);
-    let uses_custom_rules = Mode::from_name(mode).is_some_and(Mode::uses_custom_rules);
-    let mut automaton: Box<dyn Automaton> = if uses_custom_rules {
-        Box::new(LifeLike::new(
+    let width = width.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+    let height = height.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+    let mut automaton: Box<dyn Automaton> = match Mode::from_name(mode) {
+        Some(Mode::Custom) => Box::new(LifeLike::new(
             width,
             height,
-            birth.to_vec(),
-            survival.to_vec(),
-        ))
-    } else {
-        automata::make_automaton(mode, width, height)
+            rules.birth.to_vec(),
+            rules.survival.to_vec(),
+        )),
+        Some(Mode::Elementary1D) => Box::new(Elementary1D::new(width, height, rules.elementary)),
+        _ => automata::make_automaton(mode, width, height),
     };
-    automaton.set_boundary(boundary);
+    automaton.set_boundary(rules.boundary);
     automaton
 }
 
@@ -56,6 +59,8 @@ pub struct RuleSpec<'a> {
     pub boundary: BoundaryMode,
     pub birth: &'a [u8],
     pub survival: &'a [u8],
+    /// Wolfram code for the Elementary 1D mode (0–255).
+    pub elementary: u8,
 }
 
 impl<'a> RuleSpec<'a> {
@@ -64,7 +69,14 @@ impl<'a> RuleSpec<'a> {
             boundary,
             birth,
             survival,
+            elementary: automata::elementary::DEFAULT_RULE,
         }
+    }
+
+    /// Set the Wolfram code used by the Elementary 1D mode.
+    pub fn with_elementary(mut self, rule: u8) -> Self {
+        self.elementary = rule;
+        self
     }
 }
 
@@ -77,6 +89,11 @@ pub struct Simulation {
     age_grid: Vec<u32>,
     pop_history: VecDeque<u64>,
     pub record_frames: bool,
+    /// Keep recent generations for the timeline scrubber.
+    ///
+    /// Each entry is a full grid snapshot, so recording is skipped for
+    /// headless runs and can be enabled when a scrubber is shown.
+    pub record_timeline: bool,
     frame_buffer: VecDeque<Vec<u8>>,
     frame_bytes: usize,
     pub max_frame_bytes: usize,
@@ -95,6 +112,9 @@ pub struct Simulation {
     population: u64,
     /// Reusable render buffers, refilled only when the revision changes.
     render_cache: Option<RenderCache>,
+    /// Repeated-state detector, enabled by the GUI and `--analyze`.
+    pub detect_cycles: bool,
+    cycles: CycleWatcher,
 }
 
 /// Grid data handed to the canvas for one frame.
@@ -123,25 +143,21 @@ impl Simulation {
         rules: RuleSpec<'_>,
         pattern: &str,
     ) -> Self {
-        let mut automaton = make_automaton(
-            mode,
-            width,
-            height,
-            rules.boundary,
-            rules.birth,
-            rules.survival,
-        );
+        let mut automaton = make_automaton(mode, width, height, rules);
         automaton.load_pattern(pattern);
         let cells = automaton.get_grid().cells.len();
         let population = automaton.get_grid().population() as u64;
         Self {
             automaton,
-            mode: mode.to_owned(),
+            // Store the name the engine actually built, not the raw input, so a
+            // resize or rebuild cannot drift from the active automaton.
+            mode: automata::canonical_mode_name(mode).to_owned(),
             generation: 0,
             undo: UndoManager::new(100),
             age_grid: vec![0; cells],
             pop_history: VecDeque::with_capacity(POP_HISTORY),
             record_frames: false,
+            record_timeline: true,
             frame_buffer: VecDeque::new(),
             frame_bytes: 0,
             max_frame_bytes: DEFAULT_MAX_FRAME_BYTES,
@@ -152,6 +168,8 @@ impl Simulation {
             revision: 0,
             population,
             render_cache: None,
+            detect_cycles: false,
+            cycles: CycleWatcher::new(250_000),
         }
     }
 
@@ -191,7 +209,35 @@ impl Simulation {
     }
 
     pub fn density(&self) -> f32 {
-        self.population() as f32 / (self.width() * self.height()).max(1) as f32
+        let (start, end) = self.automaton.active_rows();
+        let rows = end.saturating_sub(start).max(1);
+        self.population() as f32 / (self.width() * rows).max(1) as f32
+    }
+
+    /// Metrics for the current generation.
+    ///
+    /// Entropy and the bounding box cover the whole grid; for space-time modes
+    /// such as Elementary 1D that includes the drawn history.
+    pub fn metrics(&self) -> Metrics {
+        let grid = self.grid();
+        Metrics {
+            generation: self.generation,
+            population: self.population(),
+            density: f64::from(self.density()),
+            entropy: analysis::shannon_entropy(&grid.cells),
+            bbox: analysis::bounding_box(&grid.cells, grid.width, grid.height),
+            cycle: self.cycles.cycle(),
+        }
+    }
+
+    /// Cycle detected so far, if repeated-state detection is enabled.
+    pub fn cycle(&self) -> Option<Cycle> {
+        self.cycles.cycle()
+    }
+
+    /// Rows the automaton actually evolves (the whole grid for 2-D modes).
+    pub fn active_rows(&self) -> (usize, usize) {
+        self.automaton.active_rows()
     }
 
     pub fn mode(&self) -> &str {
@@ -246,6 +292,13 @@ impl Simulation {
             cache.ages.extend_from_slice(&self.age_grid);
             cache.revision = self.revision;
         }
+        // Render-only markers (the ant) are baked into the frame copy, never
+        // into the simulation grid.
+        if let Some((index, state)) = self.automaton.marker() {
+            if let Some(cell) = cache.cells.get_mut(index) {
+                *cell = state;
+            }
+        }
         RenderFrame {
             width,
             height,
@@ -256,14 +309,47 @@ impl Simulation {
     }
 
     /// Return buffers previously obtained from [`Simulation::take_render_frame`].
-    pub fn return_render_frame(&mut self, mut frame: RenderFrame) {
-        frame.cells.clear();
-        frame.ages.clear();
+    ///
+    /// The buffers keep their contents so an unchanged grid is not copied
+    /// again on the next frame.
+    pub fn return_render_frame(&mut self, frame: RenderFrame) {
         self.render_cache = Some(RenderCache {
             revision: frame.revision,
             cells: frame.cells,
             ages: frame.ages,
         });
+    }
+
+    /// Cell buffer as the canvas should draw it: canonical state plus any
+    /// render-only marker (the ant).
+    pub fn display_cells(&self) -> Vec<u8> {
+        let mut cells = self.automaton.state_cells();
+        if let Some((index, state)) = self.automaton.marker() {
+            if let Some(cell) = cells.get_mut(index) {
+                *cell = state;
+            }
+        }
+        cells
+    }
+
+    /// A standalone grid with markers applied, for image export.
+    pub fn display_grid(&self) -> Grid {
+        Grid {
+            cells: self.display_cells(),
+            width: self.width(),
+            height: self.height(),
+        }
+    }
+
+    /// Canonical state, excluding render-only markers.
+    pub fn state_cells(&self) -> Vec<u8> {
+        self.automaton.state_cells()
+    }
+
+    /// Automaton state that lives outside the grid (for example the ant's
+    /// position and heading), captured by saved state files.
+    pub fn aux_state(&self) -> Vec<u8> {
+        self.automaton.aux_state()
     }
 
     pub fn pop_history(&self) -> &VecDeque<u64> {
@@ -302,35 +388,16 @@ impl Simulation {
 
     pub fn step(&mut self) {
         self.rewind_to_live();
-        if self.timeline.is_empty() {
+        if self.record_timeline && self.timeline.is_empty() {
             // Seed with the pre-step state so the scrubber can reach generation 0.
-            self.record_timeline();
+            self.push_timeline_snapshot();
         }
         self.automaton.step();
         self.generation += 1;
-
-        let grid = self.automaton.get_grid();
-        if self.age_grid.len() != grid.cells.len() {
-            self.age_grid = vec![0; grid.cells.len()];
-        }
-        let age = &mut self.age_grid;
-        let mut pop = 0u64;
-        for (index, &state) in grid.cells.iter().enumerate() {
-            if state != 0 {
-                age[index] = age[index].saturating_add(1);
-                pop += 1;
-            } else {
-                age[index] = 0;
-            }
-        }
-        self.population = pop;
-        self.pop_history.push_back(pop);
-        if self.pop_history.len() > POP_HISTORY {
-            self.pop_history.pop_front();
-        }
+        self.update_ages();
 
         if self.record_frames {
-            let cells = self.automaton.get_grid().cells.clone();
+            let cells = self.display_cells();
             self.frame_bytes += cells.len();
             self.frame_buffer.push_back(cells);
             while self.frame_bytes > self.max_frame_bytes && self.frame_buffer.len() > 1 {
@@ -340,7 +407,67 @@ impl Simulation {
             }
         }
         self.bump();
-        self.record_timeline();
+        if self.record_timeline {
+            self.push_timeline_snapshot();
+        }
+        if self.detect_cycles {
+            self.cycles
+                .observe(self.generation, &self.automaton.get_grid().cells);
+        }
+    }
+
+    /// Age every live cell and recount the population in one pass.
+    ///
+    /// This used to be a serial loop; it is as parallel as the automaton step
+    /// it follows, and dominates the frame budget on large grids otherwise.
+    fn update_ages(&mut self) {
+        let Self {
+            automaton,
+            age_grid,
+            ..
+        } = self;
+        let grid = automaton.get_grid();
+        let cells = &grid.cells;
+        if age_grid.len() != cells.len() {
+            *age_grid = vec![0; cells.len()];
+        }
+
+        // Space-time diagrams keep finished generations in the grid; only the
+        // active rows count towards the population and carry an age.
+        let (start, end) = automaton.active_rows();
+        let active_start = start.saturating_mul(grid.width);
+        let active_end = end.saturating_mul(grid.width);
+        let age_one = |((index, age), &state): ((usize, &mut u32), &u8)| {
+            if index < active_start || index >= active_end || state == 0 {
+                *age = 0;
+                0u64
+            } else {
+                *age = age.saturating_add(1);
+                1u64
+            }
+        };
+
+        let pop: u64 = if cells.len() >= PARALLEL_CELL_THRESHOLD {
+            age_grid
+                .par_iter_mut()
+                .enumerate()
+                .zip(cells.par_iter())
+                .map(age_one)
+                .sum()
+        } else {
+            age_grid
+                .iter_mut()
+                .enumerate()
+                .zip(cells.iter())
+                .map(age_one)
+                .sum()
+        };
+
+        self.population = pop;
+        self.pop_history.push_back(pop);
+        if self.pop_history.len() > POP_HISTORY {
+            self.pop_history.pop_front();
+        }
     }
 
     /// Run up to `steps` generations, stopping early when `cancelled` is true.
@@ -401,6 +528,7 @@ impl Simulation {
         self.frame_buffer.clear();
         self.frame_bytes = 0;
         self.clear_timeline();
+        self.cycles.reset();
         self.recount_population();
         self.bump();
     }
@@ -421,6 +549,17 @@ impl Simulation {
         self.automaton.set_boundary(boundary);
     }
 
+    /// Apply new B/S rules to the active automaton without touching the grid.
+    ///
+    /// Returns `false` for automata with fixed rules, which have to be rebuilt.
+    pub fn set_rules(&mut self, birth: &[u8], survival: &[u8]) -> bool {
+        let applied = self.automaton.set_rules(birth, survival);
+        if applied {
+            self.bump();
+        }
+        applied
+    }
+
     /// Clear the grid without changing the active mode or pattern list.
     pub fn reset(&mut self) {
         self.automaton.reset();
@@ -437,15 +576,8 @@ impl Simulation {
         rules: RuleSpec<'_>,
         pattern: &str,
     ) {
-        self.automaton = make_automaton(
-            mode,
-            width,
-            height,
-            rules.boundary,
-            rules.birth,
-            rules.survival,
-        );
-        self.mode = mode.to_owned();
+        self.automaton = make_automaton(mode, width, height, rules);
+        self.mode = automata::canonical_mode_name(mode).to_owned();
         self.automaton.load_pattern(pattern);
         self.generation = 0;
         self.undo.clear();
@@ -454,22 +586,15 @@ impl Simulation {
 
     /// Resize the grid, optionally preserving the overlapping region.
     pub fn resize(&mut self, width: usize, height: usize, rules: RuleSpec<'_>, preserve: bool) {
-        let width = width.clamp(1, MAX_GRID_SIDE);
-        let height = height.clamp(1, MAX_GRID_SIDE);
+        let width = width.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+        let height = height.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
         let old = if preserve {
             let grid = self.grid();
             Some((grid.width, grid.height, grid.cells.clone()))
         } else {
             None
         };
-        let mut automaton = make_automaton(
-            &self.mode,
-            width,
-            height,
-            rules.boundary,
-            rules.birth,
-            rules.survival,
-        );
+        let mut automaton = make_automaton(&self.mode, width, height, rules);
         if let Some((old_w, old_h, cells)) = old {
             let mut resized = vec![0u8; width * height];
             let copy_w = old_w.min(width);
@@ -525,6 +650,15 @@ impl Simulation {
     fn restore(&mut self, snapshot: Snapshot) {
         self.apply_snapshot(&snapshot);
         self.clear_timeline();
+    }
+
+    /// Restore a state previously produced by [`Simulation::state_cells`] and
+    /// [`Simulation::aux_state`], resetting every derived buffer.
+    pub fn restore_state(&mut self, cells: &[u8], aux: &[u8], generation: u64) {
+        self.automaton.set_cells(cells);
+        self.automaton.set_aux_state(aux);
+        self.generation = generation;
+        self.reset_derived_state();
     }
 
     /// Put the grid and automaton back into a recorded state.
@@ -590,7 +724,7 @@ impl Simulation {
         }
     }
 
-    fn record_timeline(&mut self) {
+    fn push_timeline_snapshot(&mut self) {
         let snapshot = self.snapshot();
         self.timeline_bytes += snapshot.byte_len();
         self.timeline.push_back(snapshot);

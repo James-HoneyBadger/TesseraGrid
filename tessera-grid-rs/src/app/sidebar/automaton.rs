@@ -81,13 +81,49 @@ impl TesseraGridApp {
                                 Ok((b, s)) => {
                                     self.custom_birth = b;
                                     self.custom_survival = s;
-                                    self.rebuild_automaton();
+                                    // Apply the rule in place: rebuilding would
+                                    // clear the grid the user is editing.
+                                    if !self
+                                        .sim
+                                        .set_rules(&self.custom_birth, &self.custom_survival)
+                                    {
+                                        self.rebuild_automaton();
+                                    }
                                 }
                                 // Keep the previous rule while the text is
                                 // unparseable rather than substituting a default.
                                 Err(err) => self.set_status(format!("Invalid rule: {err}")),
                             }
                         }
+                    }
+
+                    // Wolfram rule for elementary one-dimensional automata
+                    if self.selected_mode == "Elementary 1D" {
+                        ui.label("Wolfram rule (0–255):");
+                        let mut rule = self.elementary_rule;
+                        if ui
+                            .add(egui::Slider::new(&mut rule, 0..=255))
+                            .on_hover_text("Each bit maps a 3-cell neighbourhood to its next state")
+                            .changed()
+                        {
+                            self.elementary_rule = rule;
+                            self.sim.set_rules(&[rule], &[]);
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Presets:").small().weak());
+                            for preset in [30u8, 90, 110, 184] {
+                                if ui.small_button(preset.to_string()).clicked() {
+                                    self.elementary_rule = preset;
+                                    self.sim.set_rules(&[preset], &[]);
+                                }
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new("Rule 110 is Turing complete.")
+                                .small()
+                                .weak(),
+                        );
+                        ui.add_space(4.0);
                     }
 
                     // Seed + randomize

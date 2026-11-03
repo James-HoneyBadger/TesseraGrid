@@ -1,6 +1,6 @@
 use rand::RngExt;
 
-use crate::core::{BoundaryMode, Grid};
+use crate::core::{BoundaryMode, Grid, NeighborBuffers};
 
 use super::Automaton;
 
@@ -8,6 +8,7 @@ use super::Automaton;
 pub struct ImmigrationGame {
     grid: Grid,
     boundary: BoundaryMode,
+    neighbors: NeighborBuffers,
 }
 
 impl ImmigrationGame {
@@ -15,6 +16,7 @@ impl ImmigrationGame {
         Self {
             grid: Grid::new(width, height),
             boundary: BoundaryMode::Wrap,
+            neighbors: NeighborBuffers::default(),
         }
     }
 }
@@ -25,8 +27,13 @@ impl Automaton for ImmigrationGame {
     }
 
     fn step(&mut self) {
-        let (counts, sums) = self.grid.neighbor_stats_alive(self.boundary);
-        self.grid.update_cells(|i, state| {
+        let boundary = self.boundary;
+        let Self {
+            grid, neighbors, ..
+        } = self;
+        grid.neighbor_stats_into(boundary, neighbors);
+        let (counts, sums) = (&neighbors.counts, &neighbors.sums);
+        grid.update_cells(|i, state| {
             let nc = counts[i];
             if state > 0 {
                 if nc == 2 || nc == 3 {

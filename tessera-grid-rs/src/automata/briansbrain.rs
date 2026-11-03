@@ -1,6 +1,6 @@
 use rand::RngExt;
 
-use crate::core::{BoundaryMode, Grid};
+use crate::core::{BoundaryMode, Grid, NeighborBuffers};
 
 use super::Automaton;
 
@@ -8,6 +8,7 @@ use super::Automaton;
 pub struct BriansBrain {
     grid: Grid,
     boundary: BoundaryMode,
+    neighbors: NeighborBuffers,
 }
 
 impl BriansBrain {
@@ -15,6 +16,7 @@ impl BriansBrain {
         Self {
             grid: Grid::new(width, height),
             boundary: BoundaryMode::Wrap,
+            neighbors: NeighborBuffers::default(),
         }
     }
 }
@@ -25,8 +27,13 @@ impl Automaton for BriansBrain {
     }
 
     fn step(&mut self) {
-        let firing_neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        self.grid.update_cells(|i, state| match state {
+        let boundary = self.boundary;
+        let Self {
+            grid, neighbors, ..
+        } = self;
+        grid.neighbor_counts_into(boundary, 1, neighbors);
+        let firing_neighbors = &neighbors.counts;
+        grid.update_cells(|i, state| match state {
             0 => u8::from(firing_neighbors[i] == 2), // Off → Firing if exactly 2 firing nbrs
             1 => 2,                                  // Firing → Refractory
             _ => 0,                                  // Refractory → Off

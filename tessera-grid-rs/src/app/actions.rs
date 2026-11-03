@@ -40,7 +40,8 @@ impl TesseraGridApp {
                 self.selected_boundary,
                 &self.custom_birth,
                 &self.custom_survival,
-            ),
+            )
+            .with_elementary(self.elementary_rule),
             &self.selected_pattern,
         );
         if !self

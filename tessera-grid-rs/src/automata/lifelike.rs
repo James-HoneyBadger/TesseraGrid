@@ -1,6 +1,6 @@
 use rand::RngExt;
 
-use crate::core::{BoundaryMode, Grid};
+use crate::core::{BoundaryMode, Grid, NeighborBuffers};
 
 use super::Automaton;
 
@@ -10,6 +10,16 @@ pub struct LifeLike {
     boundary: BoundaryMode,
     birth: Vec<u8>,
     survival: Vec<u8>,
+    /// Bit `n` set when the rule applies at `n` live neighbours.
+    birth_mask: u16,
+    survival_mask: u16,
+    neighbors: NeighborBuffers,
+}
+
+/// Pack neighbour counts into a bitmask so the step function tests one bit
+/// instead of scanning a `Vec` for every cell.
+fn count_mask(counts: &[u8]) -> u16 {
+    counts.iter().fold(0u16, |mask, &n| mask | 1 << n.min(8))
 }
 
 impl LifeLike {
@@ -17,8 +27,11 @@ impl LifeLike {
         Self {
             grid: Grid::new(width, height),
             boundary: BoundaryMode::Wrap,
+            birth_mask: count_mask(&birth),
+            survival_mask: count_mask(&survival),
             birth,
             survival,
+            neighbors: NeighborBuffers::default(),
         }
     }
 
@@ -89,15 +102,21 @@ impl Automaton for LifeLike {
     }
 
     fn step(&mut self) {
-        let neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let (birth, survival) = (&self.birth, &self.survival);
-        self.grid.update_cells(|i, state| {
-            let n = neighbors[i];
-            if state == 1 {
-                u8::from(survival.contains(&n))
+        let (boundary, birth_mask, survival_mask) =
+            (self.boundary, self.birth_mask, self.survival_mask);
+        let Self {
+            grid, neighbors, ..
+        } = self;
+        grid.neighbor_counts_into(boundary, 1, neighbors);
+        let counts = &neighbors.counts;
+        grid.update_cells(|i, state| {
+            let n = u16::from(counts[i]);
+            let rules = if state == 1 {
+                survival_mask
             } else {
-                u8::from(birth.contains(&n))
-            }
+                birth_mask
+            };
+            u8::from((rules >> n) & 1 == 1)
         });
     }
 
@@ -137,5 +156,15 @@ impl Automaton for LifeLike {
     }
     fn rule_string(&self) -> String {
         Self::format_bs(&self.birth, &self.survival)
+    }
+
+    fn set_rules(&mut self, birth: &[u8], survival: &[u8]) -> bool {
+        self.birth.clear();
+        self.birth.extend_from_slice(birth);
+        self.survival.clear();
+        self.survival.extend_from_slice(survival);
+        self.birth_mask = count_mask(&self.birth);
+        self.survival_mask = count_mask(&self.survival);
+        true
     }
 }

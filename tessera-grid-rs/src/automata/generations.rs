@@ -1,6 +1,6 @@
 use rand::RngExt;
 
-use crate::core::{BoundaryMode, Grid};
+use crate::core::{BoundaryMode, Grid, NeighborBuffers};
 
 use super::Automaton;
 
@@ -12,17 +12,26 @@ pub struct Generations {
     boundary: BoundaryMode,
     birth: Vec<u8>,
     survival: Vec<u8>,
+    /// Bit `n` set when the rule applies at `n` live neighbours.
+    birth_mask: u16,
+    survival_mask: u16,
     n_states: u8,
+    neighbors: NeighborBuffers,
 }
 
 impl Generations {
     pub fn new(width: usize, height: usize) -> Self {
+        let birth = vec![3];
+        let survival = vec![2, 3];
         Self {
             grid: Grid::new(width, height),
             boundary: BoundaryMode::Wrap,
-            birth: vec![3],
-            survival: vec![2, 3],
+            birth_mask: birth.iter().fold(0u16, |mask, &n| mask | 1 << n),
+            survival_mask: survival.iter().fold(0u16, |mask, &n| mask | 1 << n),
+            birth,
+            survival,
             n_states: 8,
+            neighbors: NeighborBuffers::default(),
         }
     }
 }
@@ -33,15 +42,24 @@ impl Automaton for Generations {
     }
 
     fn step(&mut self) {
-        // Count only fully-alive (state == 1) neighbours
-        let neighbors = self.grid.neighbor_counts(self.boundary, 1);
-        let (birth, survival, n_states) = (&self.birth, &self.survival, self.n_states);
-        self.grid.update_cells(|i, state| {
-            let nc = neighbors[i];
+        // Count only fully-alive (state == 1) neighbours.
+        let (boundary, birth_mask, survival_mask, n_states) = (
+            self.boundary,
+            self.birth_mask,
+            self.survival_mask,
+            self.n_states,
+        );
+        let Self {
+            grid, neighbors, ..
+        } = self;
+        grid.neighbor_counts_into(boundary, 1, neighbors);
+        let counts = &neighbors.counts;
+        grid.update_cells(|i, state| {
+            let nc = u16::from(counts[i]);
             match state {
-                0 => u8::from(birth.contains(&nc)),
+                0 => u8::from((birth_mask >> nc) & 1 == 1),
                 1 => {
-                    if survival.contains(&nc) {
+                    if (survival_mask >> nc) & 1 == 1 {
                         1
                     } else {
                         2 // begin decay

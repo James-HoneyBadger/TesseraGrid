@@ -10,7 +10,15 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         return Ok(());
     }
 
-    let mode = if cli.rule.is_some() {
+    // A Wolfram code selects the Elementary 1D mode, B/S notation selects Custom.
+    let elementary = match cli.rule.as_deref() {
+        Some(text) => parse_wolfram(text)?,
+        None => None,
+    };
+
+    let mode = if elementary.is_some() {
+        "Elementary 1D".to_owned()
+    } else if cli.rule.is_some() {
         "Custom Rules".to_owned()
     } else {
         cli.mode.clone().unwrap_or_else(|| DEFAULT_MODE.to_owned())
@@ -21,18 +29,24 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         ));
     }
 
-    let (birth, survival) = match &cli.rule {
-        Some(rule) => {
+    let (birth, survival) = match (&cli.rule, elementary) {
+        (Some(rule), None) => {
             LifeLike::try_parse_bs(rule).map_err(|err| format!("invalid --rule: {err}"))?
         }
-        None => (vec![3], vec![2, 3]),
+        _ => (vec![3], vec![2, 3]),
     };
 
     let boundary = cli.boundary_mode()?;
-    let width = cli.grid_width().clamp(1, 4096);
-    let height = cli.grid_height().clamp(1, 4096);
-    let rule_spec = RuleSpec::new(boundary, &birth, &survival);
+    let width = cli.grid_width().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+    let height = cli.grid_height().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+    let mut rule_spec = RuleSpec::new(boundary, &birth, &survival);
+    if let Some(rule) = elementary {
+        rule_spec = rule_spec.with_elementary(rule);
+    }
     let mut sim = Simulation::new(&mode, width, height, rule_spec, "");
+    // Timeline snapshots are a UI affordance; a scripted run does not need one
+    // grid clone per generation.
+    sim.record_timeline = false;
 
     let pattern = cli.pattern.clone().unwrap_or_else(|| {
         sim.available_patterns()
@@ -61,20 +75,31 @@ pub fn run(cli: &Cli) -> Result<(), String> {
 
     let recording = cli.gif.is_some();
     sim.record_frames = recording;
-    if cli.steps > 0 {
-        sim.run_steps(cli.steps, || false);
+    // Repeated-state detection is what `--analyze` and the CSV report need.
+    sim.detect_cycles = cli.analyze || cli.analysis_csv.is_some();
+    let steps = cli.steps();
+    let mut series = Vec::new();
+    if steps > 0 {
+        if cli.analysis_csv.is_some() {
+            for _ in 0..steps {
+                sim.step();
+                series.push(sim.metrics());
+            }
+        } else {
+            sim.run_steps(steps, || false);
+        }
     }
 
-    let cell_size = cli.cell_size.clamp(1, 64);
+    let cell_size = cli.cell_size().clamp(1, 64);
     if let Some(path) = &cli.png {
-        export::export_png(sim.grid(), cell_size, path)
+        export::export_png(&sim.display_grid(), cell_size, path)
             .map_err(|err| format!("PNG export failed: {err}"))?;
     }
     if let Some(path) = &cli.gif {
         if sim.frame_count() == 0 {
             return Err("GIF export needs at least one recorded step (use --steps)".to_owned());
         }
-        let delay_ms = 1000 / cli.gif_fps.clamp(1, 60);
+        let delay_ms = 1000 / cli.gif_fps().clamp(1, 60);
         let (grid_w, grid_h) = (sim.width(), sim.height());
         export::export_gif(sim.frames(), grid_w, grid_h, cell_size, delay_ms, path)
             .map_err(|err| format!("GIF export failed: {err}"))?;
@@ -83,6 +108,13 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         let encoded = rle::encode(sim.grid(), &sim.rule_string());
         std::fs::write(path, encoded)
             .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+    }
+
+    if let Some(path) = &cli.analysis_csv {
+        write_analysis_csv(path, &series)?;
+    }
+    if cli.analyze {
+        print_analysis(&sim, steps);
     }
 
     println!("mode: {}", sim.mode());
@@ -96,5 +128,114 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         println!("frames: {}", sim.frame_count());
     }
 
+    if let Some(generations) = cli.divergence {
+        run_divergence(
+            &mode,
+            width,
+            height,
+            rule_spec,
+            &pattern,
+            cli.seed.unwrap_or(1),
+            generations,
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Write one row per generation: the numbers a scientist would plot.
+fn write_analysis_csv(
+    path: &std::path::Path,
+    series: &[crate::core::analysis::Metrics],
+) -> Result<(), String> {
+    let mut out =
+        String::from("generation,population,density,entropy,bounds_width,bounds_height\n");
+    for metrics in series {
+        let (width, height) = metrics
+            .bbox
+            .map_or((0, 0), |(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1));
+        out.push_str(&format!(
+            "{},{},{:.6},{:.6},{width},{height}\n",
+            metrics.generation, metrics.population, metrics.density, metrics.entropy
+        ));
+    }
+    std::fs::write(path, out).map_err(|err| format!("cannot write {}: {err}", path.display()))
+}
+
+fn print_analysis(sim: &Simulation, steps: u64) {
+    let metrics = sim.metrics();
+    println!("entropy: {:.4} bits/cell", metrics.entropy);
+    match metrics.bbox {
+        Some((x0, y0, x1, y1)) => {
+            println!("bounds: {}x{} at ({x0}, {y0})", x1 - x0 + 1, y1 - y0 + 1)
+        }
+        None => println!("bounds: empty"),
+    }
+    match metrics.cycle {
+        Some(cycle) => println!(
+            "cycle: period {} after {} generations",
+            cycle.period, cycle.transient
+        ),
+        None => println!("cycle: none within {steps} generations"),
+    }
+    if let Some(cycle) = metrics.cycle {
+        if cycle.period == 1 {
+            println!("note: the state is a still life (fixed point)");
+        }
+    }
+}
+
+/// Two runs that differ by a single cell, measured generation by generation.
+///
+/// A positive growth rate means nearby initial conditions separate, which is
+/// the defining behaviour of a chaotic rule; a rate near zero means the rule is
+/// stable and predictable.
+#[allow(clippy::too_many_arguments)]
+fn run_divergence(
+    mode: &str,
+    width: usize,
+    height: usize,
+    rules: RuleSpec<'_>,
+    pattern: &str,
+    seed: u64,
+    steps: u64,
+) -> Result<(), String> {
+    let mut control = Simulation::new(mode, width, height, rules, pattern);
+    let mut perturbed = Simulation::new(mode, width, height, rules, pattern);
+    control.randomize(seed);
+    perturbed.randomize(seed);
+
+    // Flip the first live cell so the perturbation cannot be a no-op: flipping
+    // an already-doomed cell can leave the two runs identical after a step.
+    let (first_row, last_row) = control.active_rows();
+    let mut target = (first_row, control.width() / 2);
+    'search: for y in first_row..last_row {
+        for x in 0..control.width() {
+            if perturbed.grid().get(y, x) != 0 {
+                target = (y, x);
+                break 'search;
+            }
+        }
+    }
+    let current = perturbed.grid().get(target.0, target.1);
+    perturbed.paint(target.0, target.1, if current == 0 { 1 } else { 0 });
+
+    println!("# divergence: one perturbed cell, seed {seed}");
+    println!("# generation,hamming_distance");
+    let mut distance = 0;
+    for generation in 1..=steps.max(1) {
+        control.step();
+        perturbed.step();
+        distance = hamming_distance(&control.grid().cells, &perturbed.grid().cells);
+        if generation <= 10 || generation % 10 == 0 || generation == steps {
+            println!("{generation},{distance}");
+        }
+    }
+    if distance > 0 {
+        let rate = (distance as f64).ln() / steps.max(1) as f64;
+        println!("# growth rate: {rate:.4} per generation (ln distance / steps)");
+    } else {
+        println!("# growth rate: 0 (the perturbation died out)");
+    }
     Ok(())
 }

@@ -75,7 +75,8 @@ fn lists_all_modes() {
     let output = bin().arg("--list-modes").output().expect("run tessera");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.lines().count(), 10);
+    assert_eq!(stdout.lines().count(), 11);
+    assert!(stdout.contains("Elementary 1D"));
     assert!(stdout.contains("Langton's Ant"));
     assert!(stdout.contains("Custom Rules"));
 }
@@ -88,6 +89,69 @@ fn gif_requires_recorded_frames() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("at least one recorded step"));
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn elementary_rules_run_headless() {
+    let output = bin()
+        .args(["--rule", "W110", "--width", "40", "--height", "20"])
+        .args(["--steps", "19", "--analyze"])
+        .output()
+        .expect("run tessera");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("mode: Elementary 1D"), "{stdout}");
+    assert!(stdout.contains("rule: W110"), "{stdout}");
+    assert!(stdout.contains("entropy:"), "{stdout}");
+}
+
+#[test]
+fn out_of_range_wolfram_rules_are_rejected() {
+    let output = bin()
+        .args(["--rule", "W300", "--stats"])
+        .output()
+        .expect("run tessera");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("out of range"), "{stderr}");
+}
+
+#[test]
+fn analysis_csv_and_cycle_detection_work() {
+    let dir = temp_dir("analysis");
+    let csv = dir.join("metrics.csv");
+
+    let output = bin()
+        .args(["--pattern", "Blinker", "--steps", "6", "--analyze"])
+        .arg("--analysis-csv")
+        .arg(&csv)
+        .output()
+        .expect("run tessera");
+    assert!(output.status.success());
+
+    let text = std::fs::read_to_string(&csv).expect("read csv");
+    assert!(
+        text.starts_with("generation,population,density,entropy"),
+        "{text}"
+    );
+    assert_eq!(text.lines().count(), 7, "one header plus six generations");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("cycle: period 2"), "{stdout}");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn divergence_reports_a_growth_rate() {
+    let output = bin()
+        .args(["--pattern", "Random Soup", "--steps", "0"])
+        .args(["--divergence", "30", "--seed", "1"])
+        .output()
+        .expect("run tessera");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("# divergence:"), "{stdout}");
+    assert!(stdout.contains("# growth rate:"), "{stdout}");
 }
 
 fn size(path: &Path) -> u64 {

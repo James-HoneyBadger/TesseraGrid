@@ -139,12 +139,14 @@ fn every_mode_supports_empty_and_random_soup() {
             "{mode} should offer Empty"
         );
         auto.load_pattern("Empty");
-        // Langton's Ant renders the ant itself as a marker cell.
-        let expected = if *mode == "Langton's Ant" { 1 } else { 0 };
+        // Empty clears the grid for every mode; the ant is a render marker and
+        // must not appear in the canonical cells.
+        assert_eq!(auto.get_grid().population(), 0, "{mode} Empty clears");
+        let expected_marker = usize::from(*mode == "Langton's Ant");
         assert_eq!(
-            auto.get_grid().population(),
-            expected,
-            "{mode} Empty clears"
+            usize::from(auto.marker().is_some()),
+            expected_marker,
+            "{mode} marker"
         );
 
         auto.randomize(42);
@@ -199,4 +201,14 @@ fn every_mode_builds_an_automaton_with_the_right_name() {
 fn unknown_mode_names_fall_back_to_conway() {
     let automaton = make_automaton("not a mode", 8, 8);
     assert_eq!(automaton.name(), Mode::Conway.name());
+}
+
+#[test]
+fn canonical_mode_names_map_unknown_values_to_conway() {
+    assert_eq!(canonical_mode_name("High Life"), "High Life");
+    assert_eq!(canonical_mode_name("High Life "), "Conway's Game of Life");
+    assert_eq!(canonical_mode_name("nonsense"), "Conway's Game of Life");
+    for mode in ALL_MODES {
+        assert_eq!(canonical_mode_name(mode), *mode, "{mode} round trips");
+    }
 }

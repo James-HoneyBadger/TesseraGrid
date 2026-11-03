@@ -3,6 +3,21 @@
 use super::*;
 
 impl TesseraGridApp {
+    /// Metrics for the current generation, throttled so a running simulation
+    /// does not pay for an entropy pass on every rendered frame.
+    fn current_metrics(&mut self) -> crate::core::analysis::Metrics {
+        let revision = self.sim.revision();
+        if let Some((computed_at, cached_revision, metrics)) = self.metrics_cache {
+            let fresh_enough = self.running && computed_at.elapsed() < Duration::from_millis(200);
+            if cached_revision == revision || fresh_enough {
+                return metrics;
+            }
+        }
+        let metrics = self.sim.metrics();
+        self.metrics_cache = Some((Instant::now(), revision, metrics));
+        metrics
+    }
+
     pub(super) fn ui_statistics_section(&mut self, ui: &mut egui::Ui, card: &SidebarCard) {
         card.frame.show(ui, |ui| {
             egui::CollapsingHeader::new("Statistics")
@@ -47,6 +62,24 @@ impl TesseraGridApp {
                     } else {
                         ui.weak("Run the simulation to see statistics.");
                     }
+
+                    let metrics = self.current_metrics();
+                    ui.separator();
+                    ui.label(format!("Entropy {:.3} bits/cell", metrics.entropy));
+                    if let Some((x0, y0, x1, y1)) = metrics.bbox {
+                        ui.label(format!(
+                            "Bounds {}×{} at ({x0}, {y0})",
+                            x1 - x0 + 1,
+                            y1 - y0 + 1
+                        ));
+                    }
+                    match metrics.cycle {
+                        Some(cycle) => ui.label(format!(
+                            "Cycle: period {} after {} generations",
+                            cycle.period, cycle.transient
+                        )),
+                        None => ui.weak("Cycle: none detected yet"),
+                    };
 
                     ui.horizontal(|ui| {
                         if ui.small_button("Reset stats").clicked() {

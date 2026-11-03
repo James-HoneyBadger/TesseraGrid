@@ -85,6 +85,57 @@ jobs:
           path: tessera-grid-rs/lcov.info
           if-no-files-found: error
 
+  msrv:
+    name: MSRV (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
+      # `rust-toolchain.toml` pins stable, so the floor is selected explicitly.
+      - run: cargo +${{ matrix.toolchain }} check --all-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep in sync with `rust-version` in Cargo.toml.
+        toolchain: [ "1.95" ]
+
+  test-release:
+    name: Test (release, overflow semantics)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
+      # Arithmetic that wraps only in release builds escapes the debug matrix.
+      - run: cargo test --all-targets --release
+
+  benches:
+    name: Benchmarks compile and run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libudev-dev libgl1-mesa-dev
+      - run: cargo bench --no-fail-fast
+
   build:
     name: Release build
     runs-on: ubuntu-latest

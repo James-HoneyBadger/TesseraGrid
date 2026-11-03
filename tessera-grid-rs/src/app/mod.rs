@@ -36,6 +36,10 @@ use crate::sim::{RenderFrame, RuleSpec, Simulation};
 /// not starve the UI thread.
 const MAX_STEPS_PER_FRAME: u32 = 8;
 
+/// Cached, back-to-front sorted live cells for the isometric view, tagged with
+/// the grid revision they were built from.
+type IsoCache = (u64, Vec<(u32, u32, u8)>);
+
 // ---------------------------------------------------------------------------
 // View mode (2-D flat vs isometric 3-D)
 // ---------------------------------------------------------------------------
@@ -83,6 +87,8 @@ pub struct TesseraGridApp {
     custom_rule_str: String,
     custom_birth: Vec<u8>,
     custom_survival: Vec<u8>,
+    /// Wolfram code for the Elementary 1D mode.
+    elementary_rule: u8,
     seed_input: String,
     last_seed: u64,
 
@@ -107,6 +113,7 @@ pub struct TesseraGridApp {
     resize_h_input: String,
     resize_preserve: bool,
     resize_aspect: bool,
+    resize_error: Option<String>,
 
     // ── Rate tracking ────────────────────────────────────────────────────────
     last_frame_time: Instant,
@@ -142,6 +149,11 @@ pub struct TesseraGridApp {
     view_mode: ViewMode,
     iso_offset: Vec2, // manual pan in iso view
     iso_height: f32,  // block height multiplier (0.25–4.0)
+    /// Live cells sorted back-to-front, rebuilt only when the grid revision
+    /// changes so the isometric view does not re-sort every frame.
+    iso_cache: Option<IsoCache>,
+    /// Last computed statistics, throttled by time and grid revision.
+    metrics_cache: Option<(Instant, u64, crate::core::analysis::Metrics)>,
 
     // ── Persisted layout ─────────────────────────────────────────────────────
     panel_width: f32,
@@ -162,9 +174,11 @@ impl TesseraGridApp {
             &cfg.automaton_mode,
             cfg.grid_width,
             cfg.grid_height,
-            RuleSpec::new(boundary, &cfg.custom_birth, &cfg.custom_survival),
+            RuleSpec::new(boundary, &cfg.custom_birth, &cfg.custom_survival)
+                .with_elementary(cfg.elementary_rule),
             "",
         );
+        sim.detect_cycles = true;
 
         let pattern = if sim.available_patterns().contains(&cfg.pattern.as_str()) {
             cfg.pattern.clone()
@@ -195,12 +209,13 @@ impl TesseraGridApp {
             rounded_cells: cfg.rounded_cells,
             compact_mode: cfg.compact_mode,
 
-            selected_mode: cfg.automaton_mode,
+            selected_mode: automata::canonical_mode_name(&cfg.automaton_mode).to_owned(),
             selected_pattern: pattern,
             selected_boundary: boundary,
             custom_rule_str,
             custom_birth: cfg.custom_birth,
             custom_survival: cfg.custom_survival,
+            elementary_rule: cfg.elementary_rule,
             seed_input: "1".into(),
             last_seed: 1,
 
@@ -222,6 +237,7 @@ impl TesseraGridApp {
             resize_h_input: "100".into(),
             resize_preserve: false,
             resize_aspect: false,
+            resize_error: None,
 
             last_frame_time: Instant::now(),
             fps: 0.0,
@@ -239,7 +255,11 @@ impl TesseraGridApp {
             show_gallery: false,
             show_about: false,
             gallery_filter: String::new(),
-            tool_mode: ToolMode::default(),
+            tool_mode: if cfg.tool_mode == "Select" {
+                ToolMode::Select
+            } else {
+                ToolMode::Paint
+            },
             selection: None,
             selection_anchor: None,
             clipboard: None,
@@ -251,6 +271,8 @@ impl TesseraGridApp {
             },
             iso_offset: Vec2::ZERO,
             iso_height: cfg.iso_height,
+            iso_cache: None,
+            metrics_cache: None,
             panel_width: cfg.panel_width,
             theme_key: None,
         }

@@ -77,59 +77,95 @@ impl TesseraGridApp {
             }
         }
 
-        // Collect live cells and sort back→front: ascending (gx+gy), then ascending gx.
-        let mut live: Vec<(usize, usize, u8)> = cells_snapshot
-            .iter()
-            .enumerate()
-            .filter(|(_, &s)| s > 0)
-            .map(|(i, &s)| (i % gw, i / gw, s))
-            .collect();
-        live.sort_unstable_by_key(|&(gx, gy, _)| (gx + gy, gx));
+        // Live cells sorted back→front: ascending (gx+gy), then ascending gx.
+        // The sort only runs when the grid actually changed.
+        let revision = self.sim.revision();
+        let mut cache = self.iso_cache.take();
+        if !matches!(&cache, Some((cached, _)) if *cached == revision) {
+            let mut live: Vec<(u32, u32, u8)> = cells_snapshot
+                .iter()
+                .enumerate()
+                .filter(|(_, &state)| state > 0)
+                .map(|(i, &state)| ((i % gw) as u32, (i / gw) as u32, state))
+                .collect();
+            live.sort_unstable_by_key(|&(gx, gy, _)| (gx + gy, gx));
+            cache = Some((revision, live));
+        }
 
-        for (gx, gy, state) in &live {
-            let x = *gx as f32;
-            let y = *gy as f32;
-            let h = *state as f32;
+        // Every block becomes three quads in one mesh, so the whole view costs a
+        // single shape instead of three allocations per live cell.
+        let mut mesh = egui::Mesh::default();
+        let push_quad = |mesh: &mut egui::Mesh, points: [egui::Pos2; 4], color: Color32| {
+            let base = mesh.vertices.len() as u32;
+            for point in points {
+                mesh.colored_vertex(point, color);
+            }
+            mesh.add_triangle(base, base + 1, base + 2);
+            mesh.add_triangle(base, base + 2, base + 3);
+        };
 
-            let base_c = if self.show_aging && age_snapshot.len() > gy * gw + gx {
-                aging_color(colors.cell(*state), age_snapshot[gy * gw + gx])
-            } else {
-                colors.cell(*state)
-            };
+        if let Some((_, live)) = &cache {
+            // Blocks further than this from the viewport cannot be visible.
+            let visible = rect.expand(cs * 2.0 + iso_h * cs);
+            mesh.vertices.reserve(live.len() * 12);
+            mesh.indices.reserve(live.len() * 18);
+            for &(gx, gy, state) in live {
+                let x = gx as f32;
+                let y = gy as f32;
+                let h = state as f32;
+                if !visible.contains(ipt(x + 0.5, y + 0.5, h * 0.5)) {
+                    continue;
+                }
 
-            // Right face (x+1 side — lower right of block)
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    ipt(x + 1.0, y, h),
-                    ipt(x + 1.0, y + 1.0, h),
-                    ipt(x + 1.0, y + 1.0, 0.0),
-                    ipt(x + 1.0, y, 0.0),
-                ],
-                shade(base_c, 0.52),
-                egui::Stroke::NONE,
-            ));
-            // Left face (y+1 side — lower left of block)
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    ipt(x, y + 1.0, h),
-                    ipt(x + 1.0, y + 1.0, h),
-                    ipt(x + 1.0, y + 1.0, 0.0),
-                    ipt(x, y + 1.0, 0.0),
-                ],
-                shade(base_c, 0.72),
-                egui::Stroke::NONE,
-            ));
-            // Top face
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    ipt(x, y, h),
-                    ipt(x + 1.0, y, h),
-                    ipt(x + 1.0, y + 1.0, h),
-                    ipt(x, y + 1.0, h),
-                ],
-                base_c,
-                egui::Stroke::NONE,
-            ));
+                let base_c =
+                    if self.show_aging && age_snapshot.len() > (gy as usize) * gw + gx as usize {
+                        aging_color(
+                            colors.cell(state),
+                            age_snapshot[gy as usize * gw + gx as usize],
+                        )
+                    } else {
+                        colors.cell(state)
+                    };
+
+                // Right face (x+1 side — lower right of block)
+                push_quad(
+                    &mut mesh,
+                    [
+                        ipt(x + 1.0, y, h),
+                        ipt(x + 1.0, y + 1.0, h),
+                        ipt(x + 1.0, y + 1.0, 0.0),
+                        ipt(x + 1.0, y, 0.0),
+                    ],
+                    shade(base_c, 0.52),
+                );
+                // Left face (y+1 side — lower left of block)
+                push_quad(
+                    &mut mesh,
+                    [
+                        ipt(x, y + 1.0, h),
+                        ipt(x + 1.0, y + 1.0, h),
+                        ipt(x + 1.0, y + 1.0, 0.0),
+                        ipt(x, y + 1.0, 0.0),
+                    ],
+                    shade(base_c, 0.72),
+                );
+                // Top face
+                push_quad(
+                    &mut mesh,
+                    [
+                        ipt(x, y, h),
+                        ipt(x + 1.0, y, h),
+                        ipt(x + 1.0, y + 1.0, h),
+                        ipt(x, y + 1.0, h),
+                    ],
+                    base_c,
+                );
+            }
+        }
+
+        self.iso_cache = cache;
+        if !mesh.vertices.is_empty() {
+            painter.add(egui::Shape::mesh(mesh));
         }
 
         // Selection overlay (flat diamond outline on ground plane)

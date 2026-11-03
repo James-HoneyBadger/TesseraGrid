@@ -4,6 +4,63 @@ All notable changes to Tessera Grid are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Elementary 1D mode**: all 256 Wolfram rules rendered as a space-time diagram,
+  with a rule slider, presets (30, 90, 110, 184) and `--rule W110` on the CLI.
+  Rule 110 is Turing complete, which gives the simulator a self-contained
+  universal-computation demonstration. Only the newest row counts as population
+  and carries an age, so the statistics stay meaningful.
+- **`core::analysis`**: Shannon entropy, Hamming distance, bounding box, a
+  bounded repeated-state detector (transient + period), and `Simulation::metrics`.
+- **Analysis tooling**: the Statistics card shows entropy, bounds and cycle
+  period; `--analyze` prints a summary, `--analysis-csv` writes a per-generation
+  time series, and `--divergence N` measures how fast a one-cell perturbation
+  spreads (a Lyapunov-style growth rate).
+- `NeighborBuffers`: neighbour-counting scratch buffers that are reused across
+  generations instead of allocating several grid-sized vectors per step.
+- `cargo bench`: a dependency-free throughput table for the neighbour passes,
+  Hexagonal Life and a full `Simulation::step`.
+- CI jobs for the declared MSRV (`1.95`), a release-mode test run (different
+  overflow semantics), and a benchmark smoke run.
+- `Automaton::marker`, a render-only overlay hook, plus `Simulation::display_cells`
+  / `display_grid` for drawing and image export.
+- `Automaton::active_rows`, so space-time automata can declare which rows are live
+  state rather than finished history.
+
+### Changed
+- **Stepping is faster.** The per-generation age/population pass is now parallel,
+  neighbour buffers are reused, life-like rule membership is a bitmask lookup, and
+  Hexagonal Life uses precomputed wrap tables (measured at 1000×1000: full step
+  2.59 ms → 1.41 ms, Hexagonal Life 4.90 ms → 1.55 ms).
+- Timeline snapshots are opt-in (`Simulation::record_timeline`) and off for CLI
+  runs; the GUI enables them for the scrubber.
+- The isometric view draws every block into one `egui::Mesh`, culls off-screen
+  blocks and only re-sorts live cells when the grid changes.
+- Editing a custom rule updates the automaton in place: the grid and undo history
+  are no longer discarded on every keystroke. The resize dialog validates its
+  input instead of substituting `100`, and grid limits are one pair of constants
+  (`1`–`4096`) shared by the config, the CLI and the UI.
+- A corrupt `config.json` is copied to `config.json.bak` before defaults are used.
+- `tool_mode` is restored from the config, and an unknown `automaton_mode` falls
+  back to Conway instead of leaving the UI on a mode the engine never built.
+
+### Fixed
+- **Saving and loading a Langton's Ant game crashed the next step.** State files
+  stored the display grid (with the ant drawn as state 2) and dropped the ant's
+  position, so loading wrote the marker into the simulation; `1 - current`
+  underflowed. Saved files now store canonical cells plus the ant's position and
+  heading, and `Automaton::set_cells`/`edit_cells`/`paint` clamp every state to
+  `max_state()`.
+- **Langton's Ant population was off by one** and the aging overlay highlighted
+  the ant, because the render marker counted as a live cell.
+- RLE export no longer writes the ant marker as a cell.
+- `--cell-size`, `--gif-fps` and `--steps 0` now run headless instead of opening
+  the window and ignoring the flag.
+- PNG/GIF export refuses images over 64 megapixels instead of aborting on a
+  multi-gigabyte allocation.
+
 ## [6.2.0] — 2026-10-31
 
 ### Added
