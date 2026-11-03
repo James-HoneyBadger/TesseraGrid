@@ -99,6 +99,14 @@ cargo build --release
   real binary end to end.
 - UI-state helpers that are easy to get wrong (pattern drafts, timeline
   history) belong in their own `#[cfg(test)]` modules.
+- Scientific regressions must check active-state invariants across edits,
+  restore, undo and resize. Test saved-state continuation for multiple subsequent
+  generations, not just parsing or a successful first step.
+- GUI and CLI damage experiments share `DamageExperiment`; metrics exports share
+  `AnalysisMetadata`. Keep generation-zero samples, normalization, CSV schemas
+  and scientific descriptions aligned. Entropy is not a chaos classifier.
+- State schema 3 stores evolution settings independently of UI preferences.
+  Validate external cells and auxiliary state before modifying the working grid.
 - Run everything with `cargo test --all-targets`. Release-mode arithmetic is
   covered by `cargo test --all-targets --release` in CI.
 - `cargo bench` prints a timing table for the neighbour-counting passes and a

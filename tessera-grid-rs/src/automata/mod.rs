@@ -89,6 +89,20 @@ pub trait Automaton {
         Vec::new()
     }
 
+    /// Auxiliary state needed for evolution, excluding display-history cursors.
+    fn evolution_aux_state(&self) -> Vec<u8> {
+        self.aux_state()
+    }
+
+    /// Validate external auxiliary state before restoring it.
+    fn validate_aux_state(&self, state: &[u8]) -> Result<(), String> {
+        if state.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("{} does not accept auxiliary state", self.name()))
+        }
+    }
+
     /// Restore state produced by [`Automaton::aux_state`].
     fn set_aux_state(&mut self, _state: &[u8]) {}
 

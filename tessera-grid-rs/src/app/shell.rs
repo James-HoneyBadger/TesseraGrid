@@ -46,8 +46,8 @@ impl eframe::App for TesseraGridApp {
             }
         }
 
-        // A sensitivity experiment advances the main grid and its probe together.
         self.advance_sensitivity(ctx);
+        self.advance_sweep(ctx);
 
         // Generation-rate sampling (half-second window).
         let elapsed = now.duration_since(self.gen_sample_time).as_secs_f32();

@@ -4,8 +4,8 @@
 //! space-time diagram: each row is one generation, the newest row sits below the
 //! previous one, and once the diagram is full it scrolls upwards.
 //!
-//! Rule 110 is Turing complete (Cook, 2004), which makes this mode the smallest
-//! self-contained demonstration of universal computation in the simulator.
+//! Rule 110 supports universal computation with suitable encodings (Cook, 2004).
+//! A finite single-cell diagram illustrates the rule, not a universal machine.
 
 use rand::RngExt;
 
@@ -107,16 +107,13 @@ impl Automaton for Elementary1D {
         if w == 0 || h == 0 {
             return;
         }
-        // Append below the current generation; once the diagram is full, scroll
-        // it up so the newest row is always the last one.
+        self.compute_row(self.row);
         let target = if self.row + 1 < h {
             self.row + 1
         } else {
             self.grid.cells.copy_within(w.., 0);
             h - 1
         };
-        let source = target.saturating_sub(1);
-        self.compute_row(source);
         let base = target * w;
         self.grid.cells[base..base + w].copy_from_slice(&self.scratch);
         self.row = target;
@@ -190,6 +187,20 @@ impl Automaton for Elementary1D {
 
     fn aux_state(&self) -> Vec<u8> {
         (self.row as u64).to_le_bytes().to_vec()
+    }
+
+    fn evolution_aux_state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn validate_aux_state(&self, state: &[u8]) -> Result<(), String> {
+        let bytes: [u8; 8] = state
+            .try_into()
+            .map_err(|_| "Elementary state needs an 8-byte row cursor".to_owned())?;
+        if u64::from_le_bytes(bytes) >= self.grid.height as u64 {
+            return Err("Elementary row cursor is outside the grid".to_owned());
+        }
+        Ok(())
     }
 
     fn set_aux_state(&mut self, state: &[u8]) {

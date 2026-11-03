@@ -5,12 +5,14 @@
 //! engine, the GUI and the CLI without depending on either.
 
 use std::collections::HashMap;
+use std::io::{self, Write};
+
+use super::BoundaryMode;
 
 /// Hash of a cell buffer, used to recognise repeated generations.
 ///
-/// This is a word-at-a-time FNV-style mix, not a cryptographic hash: it only
-/// has to be cheap and good enough that two different grids practically never
-/// collide. Collisions would at worst report a shorter cycle.
+/// This is a non-cryptographic mix. Cycle detection verifies state equality
+/// after a hash match.
 pub fn state_hash(cells: &[u8]) -> u64 {
     const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
@@ -51,13 +53,13 @@ pub fn shannon_entropy(cells: &[u8]) -> f64 {
 
 /// Number of cells that differ between two buffers.
 ///
-/// Runs are stopped at the shorter buffer, so grids of different sizes are
-/// comparable up to their common prefix.
+/// Unmatched cells count as differences, rather than silently ignoring them.
 pub fn hamming_distance(a: &[u8], b: &[u8]) -> usize {
     a.iter()
         .zip(b)
         .filter(|(left, right)| left != right)
         .count()
+        + a.len().abs_diff(b.len())
 }
 
 /// Inclusive bounding box `(min_x, min_y, max_x, max_y)` of live cells.
@@ -89,7 +91,8 @@ pub fn bounding_box(
 /// A detected repeating generation sequence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cycle {
-    /// Generations before the cycle starts.
+    /// First retained generation on the cycle. This is an upper bound on the
+    /// transient if observation started late or earlier states were discarded.
     pub transient: u64,
     /// Cycle length in generations. `1` means the state is a still life.
     pub period: u64,
@@ -98,48 +101,99 @@ pub struct Cycle {
 /// Detects when a simulation re-enters a state it has already visited.
 ///
 /// Cellular automata are deterministic and finite, so every run must eventually
-/// cycle. This keeps a bounded map from state hash to generation, which lets the
-/// statistics panel and `--analyze` report the transient length and period of
-/// small or settling systems.
+/// cycle. Hash matches are verified against retained states. Retention is
+/// bounded by both entry count and state bytes; no repeat within that window
+/// does not prove that the system is aperiodic.
 pub struct CycleWatcher {
-    seen: HashMap<u64, u64>,
-    generation_of: u64,
+    seen: HashMap<u64, Vec<Observation>>,
+    generation_of: Option<u64>,
     cycle: Option<Cycle>,
     capacity: usize,
+    max_bytes: usize,
+    bytes: usize,
+    entries: usize,
+}
+
+struct Observation {
+    generation: u64,
+    cells: Box<[u8]>,
+    aux: Box<[u8]>,
 }
 
 impl CycleWatcher {
-    /// `capacity` bounds the number of remembered generations (8 bytes of hash
-    /// plus 8 bytes of generation each).
+    /// Retain at most `capacity` generations and 32 MiB of state payloads.
     pub fn new(capacity: usize) -> Self {
+        Self::with_budget(capacity, 32 * 1024 * 1024)
+    }
+
+    /// Bound entry overhead and retained cell/auxiliary-state payloads.
+    pub fn with_budget(capacity: usize, max_bytes: usize) -> Self {
         Self {
             seen: HashMap::new(),
-            generation_of: 0,
+            generation_of: None,
             cycle: None,
             capacity: capacity.max(1),
+            max_bytes,
+            bytes: 0,
+            entries: 0,
         }
     }
 
     /// Record the state at `generation`, returning the cycle once it is known.
     pub fn observe(&mut self, generation: u64, cells: &[u8]) -> Option<Cycle> {
+        self.observe_with_aux(generation, cells, &[])
+    }
+
+    /// Include non-cell state that affects subsequent evolution.
+    pub fn observe_with_aux(&mut self, generation: u64, cells: &[u8], aux: &[u8]) -> Option<Cycle> {
+        let hash = state_hash(cells) ^ state_hash(aux).rotate_left(17);
+        self.observe_hashed(generation, cells, aux, hash)
+    }
+
+    fn observe_hashed(
+        &mut self,
+        generation: u64,
+        cells: &[u8],
+        aux: &[u8],
+        hash: u64,
+    ) -> Option<Cycle> {
+        if self.generation_of.is_some_and(|last| generation < last) {
+            self.reset();
+        }
+        if self.generation_of == Some(generation) {
+            return self.cycle;
+        }
+        self.generation_of = Some(generation);
         if self.cycle.is_some() {
             return self.cycle;
         }
-        self.generation_of = generation;
-        let hash = state_hash(cells);
-        if let Some(&first) = self.seen.get(&hash) {
+        let previous = self.seen.get(&hash).and_then(|observations| {
+            observations
+                .iter()
+                .find(|entry| entry.cells.as_ref() == cells && entry.aux.as_ref() == aux)
+        });
+        if let Some(first) = previous {
             self.cycle = Some(Cycle {
-                transient: first,
-                period: generation - first,
+                transient: first.generation,
+                period: generation - first.generation,
             });
             return self.cycle;
         }
-        if self.seen.len() >= self.capacity {
-            // Forget everything rather than grow without bound: a later repeat
-            // is still detected, only the reported transient becomes local.
+        let bytes = cells.len() + aux.len();
+        if self.entries >= self.capacity || self.bytes.saturating_add(bytes) > self.max_bytes {
             self.seen.clear();
+            self.entries = 0;
+            self.bytes = 0;
         }
-        self.seen.insert(hash, generation);
+        if bytes <= self.max_bytes {
+            self.seen.entry(hash).or_default().push(Observation {
+                generation,
+                cells: cells.into(),
+                aux: aux.into(),
+            });
+            self.entries += 1;
+            self.bytes += bytes;
+        }
         None
     }
 
@@ -150,14 +204,16 @@ impl CycleWatcher {
 
     /// Generation of the most recent observation.
     pub fn last_generation(&self) -> u64 {
-        self.generation_of
+        self.generation_of.unwrap_or(0)
     }
 
     /// Forget the history, keeping the configured capacity.
     pub fn reset(&mut self) {
         self.seen.clear();
         self.cycle = None;
-        self.generation_of = 0;
+        self.generation_of = None;
+        self.bytes = 0;
+        self.entries = 0;
     }
 }
 
@@ -172,6 +228,55 @@ pub struct Metrics {
     /// Inclusive `(min_x, min_y, max_x, max_y)` of live cells.
     pub bbox: Option<(usize, usize, usize, usize)>,
     pub cycle: Option<Cycle>,
+}
+
+/// Reproducible run description attached to every metrics CSV row.
+pub struct AnalysisMetadata {
+    pub mode: String,
+    pub rule: String,
+    pub boundary: BoundaryMode,
+    pub width: usize,
+    pub height: usize,
+    pub initialization: String,
+    pub seed: Option<u64>,
+}
+
+impl AnalysisMetadata {
+    /// Common schema for time series, sweeps and replication results.
+    pub fn write_header(writer: &mut impl Write) -> io::Result<()> {
+        writeln!(writer, "generation,population,density,entropy,bounds_width,bounds_height,cycle_period,cycle_first_seen,cycle_status,mode,rule,boundary,grid_width,grid_height,initialization,seed,version,metric_scope")
+    }
+
+    pub fn write_row(&self, writer: &mut impl Write, metrics: Metrics) -> io::Result<()> {
+        let (width, height) = metrics
+            .bbox
+            .map_or((0, 0), |(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1));
+        let (period, transient, status) = match metrics.cycle {
+            Some(cycle) => (
+                cycle.period.to_string(),
+                cycle.transient.to_string(),
+                "detected",
+            ),
+            None => (String::new(), String::new(), "not_observed"),
+        };
+        let quote = |text: &str| format!("\"{}\"", text.replace('"', "\"\""));
+        writeln!(
+            writer,
+            "{},{},{:.9},{:.9},{width},{height},{period},{transient},{status},{},{},{},{},{},{},{},{},active_cells",
+            metrics.generation,
+            metrics.population,
+            metrics.density,
+            metrics.entropy,
+            quote(&self.mode),
+            quote(&self.rule),
+            self.boundary.as_str(),
+            self.width,
+            self.height,
+            quote(&self.initialization),
+            self.seed.map_or_else(String::new, |seed| seed.to_string()),
+            env!("CARGO_PKG_VERSION"),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -212,7 +317,7 @@ mod tests {
     fn hamming_distance_counts_differences() {
         assert_eq!(hamming_distance(&[1, 0, 1], &[1, 0, 1]), 0);
         assert_eq!(hamming_distance(&[1, 0, 1], &[1, 1, 0]), 2);
-        assert_eq!(hamming_distance(&[1, 1], &[1]), 0);
+        assert_eq!(hamming_distance(&[1, 1], &[1]), 1);
     }
 
     #[test]
@@ -270,5 +375,66 @@ mod tests {
         watcher.reset();
         assert_eq!(watcher.cycle(), None);
         assert_eq!(watcher.last_generation(), 0);
+    }
+
+    #[test]
+    fn hashes_are_only_candidates_and_auxiliary_state_matters() {
+        let mut watcher = CycleWatcher::new(10);
+        assert_eq!(watcher.observe_hashed(0, &[1], &[0], 42), None);
+        assert_eq!(watcher.observe_hashed(1, &[2], &[0], 42), None);
+        assert_eq!(watcher.observe_hashed(2, &[1], &[1], 42), None);
+        assert_eq!(watcher.observe_hashed(3, &[1], &[0], 42).unwrap().period, 3);
+    }
+
+    #[test]
+    fn duplicate_and_backwards_generations_do_not_create_invalid_periods() {
+        let mut watcher = CycleWatcher::new(10);
+        assert_eq!(watcher.observe(5, &[1]), None);
+        assert_eq!(watcher.observe(5, &[1]), None);
+        assert_eq!(watcher.observe(3, &[1]), None);
+        assert_eq!(watcher.observe(4, &[1]).unwrap().period, 1);
+    }
+
+    #[test]
+    fn retained_state_respects_the_byte_budget() {
+        let mut watcher = CycleWatcher::with_budget(100, 4);
+        for generation in 0..10 {
+            watcher.observe(generation, &[generation as u8; 3]);
+            assert!(watcher.bytes <= 4);
+        }
+        assert_eq!(watcher.entries, 1);
+        assert_eq!(watcher.observe(10, &[0; 5]), None);
+        assert_eq!(watcher.bytes, 0);
+    }
+
+    #[test]
+    fn csv_escapes_text_and_preserves_unknown_cycle_status() {
+        let metadata = AnalysisMetadata {
+            mode: "a,\"mode\"".to_owned(),
+            rule: "W30".to_owned(),
+            boundary: BoundaryMode::Fixed,
+            width: 8,
+            height: 8,
+            initialization: "Single Cell".to_owned(),
+            seed: None,
+        };
+        let mut csv = Vec::new();
+        AnalysisMetadata::write_header(&mut csv).unwrap();
+        metadata
+            .write_row(
+                &mut csv,
+                Metrics {
+                    generation: 0,
+                    population: 1,
+                    density: 0.125,
+                    entropy: 0.5,
+                    bbox: Some((4, 0, 4, 0)),
+                    cycle: None,
+                },
+            )
+            .unwrap();
+        let csv = String::from_utf8(csv).unwrap();
+        assert!(csv.contains(",,,not_observed,\"a,\"\"mode\"\"\",\"W30\",Fixed,8,8,"));
+        assert_eq!(csv.lines().count(), 2);
     }
 }

@@ -6,18 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.3.0] — 2026-11-02
+
 ### Added
 - **Elementary 1D mode**: all 256 Wolfram rules rendered as a space-time diagram,
   with a rule slider, presets (30, 90, 110, 184) and `--rule W110` on the CLI.
-  Rule 110 is Turing complete, which gives the simulator a self-contained
-  universal-computation demonstration. Only the newest row counts as population
-  and carries an age, so the statistics stay meaningful.
+  Rule 110 supports universal computation with suitable encodings; finite
+  single-cell diagrams illustrate the rule, not a universal machine.
 - **`core::analysis`**: Shannon entropy, Hamming distance, bounding box, a
   bounded repeated-state detector (transient + period), and `Simulation::metrics`.
 - **Analysis tooling**: the Statistics card shows entropy, bounds and cycle
   period; `--analyze` prints a summary, `--analysis-csv` writes a per-generation
   time series, and `--divergence N` measures how fast a one-cell perturbation
-  spreads (a Lyapunov-style growth rate).
+  spreads (descriptive finite-time log separation, not a chaos test).
 - `NeighborBuffers`: neighbour-counting scratch buffers that are reused across
   generations instead of allocating several grid-sized vectors per step.
 - `cargo bench`: a dependency-free throughput table for the neighbour passes,
@@ -28,8 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   / `display_grid` for drawing and image export.
 - `Automaton::active_rows`, so space-time automata can declare which rows are live
   state rather than finished history.
-- **Elementary rule sweep**: `--sweep-elementary` runs all 256 Wolfram rules in
-  parallel and prints one metrics row per rule (population, density, entropy,
+- **Elementary rule sweep**: `--sweep-elementary` runs all 256 Wolfram rules and
+  prints one metrics row per rule (population, density, entropy,
   bounds, cycle period), optionally into `--analysis-csv`.
 - **Wireworld `Clock` pattern**: a diamond conductor ring with one electron
   circulating forever, verified step by step in tests as a sequential-logic
@@ -38,8 +39,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   aborts with "failed printing to stdout".
 - **Analysis panel in the GUI** (Analysis menu, or the statistics card): a
   sensitivity experiment that plots the separation of two grids one cell apart,
-  and a sweep of all 256 elementary rules with a heuristic class column and CSV
-  copy. The experiment advances in slices so the window keeps repainting.
+  and a sweep of all 256 elementary rules with cycle observations and CSV copy.
+  Both tools advance in cancellable slices; sensitivity uses independent copies
+  and leaves the working simulation unchanged.
 - **`--replicates N`**: repeat a randomised run over N seeds and report the mean
   and standard deviation of population and entropy, plus the distribution of
   cycle periods.
@@ -47,6 +49,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   into two branches and merges a branch signal back into the stem.
 
 ### Fixed
+- Population accounting uses active cells on paint, restore, undo, bulk edits
+  and resize. Erasing Elementary history no longer panics or wraps to `u64::MAX`.
+- Cycle detection observes the initial generation, includes auxiliary evolution
+  state, excludes Elementary display history, verifies hash matches, and resets
+  on rule changes. Exact-state retention has an explicit memory budget.
+- State schema 3 saves the rule and boundary; loading validates cells and
+  auxiliary state before replacing the working simulation. Legacy files use
+  documented defaults with a warning instead of current GUI settings.
+- CLI divergence respects the exact configured initial state, measures active
+  cells and uses the same normalization/rate calculation as the GUI.
+- CLI experiment options and ranges are validated before execution; ignored
+  exports, coerced zero counts and wrapped seed ranges are errors. Non-pipe
+  stdout failures and CSV flush errors now fail the command.
+- Wireworld Junction rejects grids smaller than 12×7 without arithmetic overflow.
 - **Immigration newborns took the wrong colour.** The rule averaged the three
   parents and shifted the result cyclically, so a cell born between two colour-1
   parents and one colour-2 parent became colour 2. Newborns now inherit the
@@ -60,10 +76,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   randomize run can be reproduced after a restart.
 
 ### Changed
+- Metrics measure active evolution cells consistently; Elementary bounds are
+  relative to the newest row (y = 0), not the space-time diagram.
+- Metrics CSV is streamed, includes generation zero for time series, and shares
+  one self-describing schema across time series, sweeps and replicates.
+- Replicates and CLI sweeps execute one simulation at a time to bound memory.
+  Damage CSV includes normalized fractions and source-snapshot metadata.
+- Scientific text distinguishes state-frequency entropy, damage spreading and
+  universal rules from spatial complexity, proofs of chaos and encoded computers.
 - **Stepping is faster.** The per-generation age/population pass is now parallel,
   neighbour buffers are reused, life-like rule membership is a bitmask lookup, and
-  Hexagonal Life uses precomputed wrap tables (measured at 1000×1000: full step
-  2.59 ms → 1.41 ms, Hexagonal Life 4.90 ms → 1.55 ms).
+  Hexagonal Life uses precomputed wrap tables. Benchmark comparisons require
+  matching initial states and repeated measurements; single timings are not
+  reliable speedup estimates.
 - Timeline snapshots are opt-in (`Simulation::record_timeline`) and off for CLI
   runs; the GUI enables them for the scrubber.
 - The isometric view draws every block into one `egui::Mesh`, culls off-screen

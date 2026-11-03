@@ -31,8 +31,8 @@ pub struct Cli {
     #[arg(long, value_name = "MODE")]
     pub mode: Option<String>,
 
-    /// Custom B/S rule, e.g. B36/S23. Implies --mode "Custom Rules".
-    #[arg(long, value_name = "B/S")]
+    /// B/S rule (B36/S23) or Wolfram code (W110); selects the matching mode.
+    #[arg(long, value_name = "RULE")]
     pub rule: Option<String>,
 
     /// Starting pattern name (defaults to the first pattern for the mode).
@@ -91,11 +91,11 @@ pub struct Cli {
     #[arg(long)]
     pub analyze: bool,
 
-    /// Write per-generation metrics to this CSV file.
+    /// Write metrics and run metadata as CSV (including generation 0 for time series).
     #[arg(long, value_name = "PATH")]
     pub analysis_csv: Option<PathBuf>,
 
-    /// Measure how fast two runs that differ by one cell diverge, for N steps.
+    /// Measure active-cell damage for N steps from two copies of the initial state.
     #[arg(long, value_name = "N")]
     pub divergence: Option<u64>,
 
@@ -114,6 +114,125 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// Reject requests that would otherwise be silently altered or bypassed.
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, value, min, max) in [
+            (
+                "--width",
+                self.grid_width() as u64,
+                MIN_GRID_SIDE as u64,
+                MAX_GRID_SIDE as u64,
+            ),
+            (
+                "--height",
+                self.grid_height() as u64,
+                MIN_GRID_SIDE as u64,
+                MAX_GRID_SIDE as u64,
+            ),
+            ("--cell-size", u64::from(self.cell_size()), 1, 64),
+            ("--gif-fps", u64::from(self.gif_fps()), 1, 60),
+        ] {
+            if !(min..=max).contains(&value) {
+                return Err(format!("{name} must be {min}–{max}, got {value}"));
+            }
+        }
+        self.boundary_mode()?;
+        if self.divergence == Some(0) {
+            return Err("--divergence needs a positive step count".to_owned());
+        }
+        if let Some(count) = self.replicates {
+            if !(1..=10_000).contains(&count) {
+                return Err("--replicates must be 1–10000".to_owned());
+            }
+            if self.steps() == 0 {
+                return Err("--replicates needs positive --steps".to_owned());
+            }
+            if self.sweep_elementary
+                || self.divergence.is_some()
+                || self.pattern.is_some()
+                || self.png.is_some()
+                || self.gif.is_some()
+                || self.rle.is_some()
+                || self.analyze
+                || self.stats
+                || self.cell_size.is_some()
+                || self.gif_fps.is_some()
+            {
+                return Err("--replicates accepts mode/rule, geometry, boundary, --steps, --seed, --randomize and --analysis-csv only".to_owned());
+            }
+            if self
+                .seed
+                .unwrap_or(1)
+                .checked_add(u64::from(count) - 1)
+                .is_none()
+            {
+                return Err("replicate seed range exceeds u64".to_owned());
+            }
+        }
+        if self.sweep_elementary {
+            if self.steps() == 0 {
+                return Err("--sweep-elementary needs positive --steps".to_owned());
+            }
+            if self.replicates.is_some()
+                || self.divergence.is_some()
+                || self.mode.is_some()
+                || self.rule.is_some()
+                || self.pattern.is_some()
+                || self.randomize
+                || self.seed.is_some()
+                || self.png.is_some()
+                || self.gif.is_some()
+                || self.rle.is_some()
+                || self.analyze
+                || self.stats
+                || self.cell_size.is_some()
+                || self.gif_fps.is_some()
+            {
+                return Err("--sweep-elementary accepts geometry, boundary, --steps and --analysis-csv only".to_owned());
+            }
+        }
+        if self.list_modes
+            && (self.sweep_elementary
+                || self.replicates.is_some()
+                || self.divergence.is_some()
+                || self.mode.is_some()
+                || self.rule.is_some()
+                || self.pattern.is_some()
+                || self.randomize
+                || self.seed.is_some()
+                || self.steps.is_some()
+                || self.width.is_some()
+                || self.height.is_some()
+                || self.boundary.is_some()
+                || self.png.is_some()
+                || self.gif.is_some()
+                || self.rle.is_some()
+                || self.stats
+                || self.analyze
+                || self.analysis_csv.is_some()
+                || self.cell_size.is_some()
+                || self.gif_fps.is_some())
+        {
+            return Err("--list-modes cannot be combined with simulation options".to_owned());
+        }
+        if self.gif.is_some() && self.steps() == 0 {
+            return Err("GIF export needs at least one recorded step (use --steps)".to_owned());
+        }
+        if self.gif_fps.is_some() && self.gif.is_none() {
+            return Err("--gif-fps requires --gif".to_owned());
+        }
+        if self.cell_size.is_some() && self.png.is_none() && self.gif.is_none() {
+            return Err("--cell-size requires --png or --gif".to_owned());
+        }
+        let paths = [&self.png, &self.gif, &self.rle, &self.analysis_csv];
+        for (index, path) in paths.iter().enumerate() {
+            if path.is_some() && paths[..index].contains(path) {
+                return Err("output paths must be distinct".to_owned());
+            }
+        }
+        Ok(())
+    }
+
     /// True when the invocation should not open a window.
     ///
     /// Every configuration flag counts, not just the output ones: passing

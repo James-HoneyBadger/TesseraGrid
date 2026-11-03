@@ -170,7 +170,10 @@ pub struct TesseraGridApp {
 impl TesseraGridApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let (cfg, config_warning) = AppConfig::try_load();
+        Self::from_config(cfg, config_warning)
+    }
 
+    fn from_config(cfg: AppConfig, config_warning: Option<String>) -> Self {
         let boundary = BoundaryMode::all()
             .iter()
             .copied()

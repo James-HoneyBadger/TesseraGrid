@@ -36,7 +36,7 @@ impl Wireworld {
     /// circuits are built from.
     fn draw_junction(&mut self) -> Option<(usize, usize)> {
         let (w, h) = (self.grid.width, self.grid.height);
-        if w < JUNCTION_STEM + 5 || h < 7 {
+        if w / 2 < JUNCTION_STEM || h < 7 {
             return None;
         }
         let (cx, cy) = (w / 2, h / 2);
@@ -287,5 +287,22 @@ mod junction_tests {
         let mut wire = Wireworld::new(6, 5);
         assert!(wire.draw_junction().is_none());
         assert_eq!(wire.grid.population(), 0);
+    }
+
+    #[test]
+    fn junction_patterns_handle_every_small_dimension_without_wrapping() {
+        for width in 1..=16 {
+            for height in 1..=10 {
+                let mut wire = Wireworld::new(width, height);
+                wire.load_pattern("Junction");
+                if width < 12 || height < 7 {
+                    assert_eq!(wire.grid.population(), 0, "{width}x{height}");
+                } else {
+                    assert_eq!(wire.grid.population(), 11, "{width}x{height}");
+                    assert_eq!(heads(&wire), 1);
+                }
+                wire.step();
+            }
+        }
     }
 }

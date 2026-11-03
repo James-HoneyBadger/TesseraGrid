@@ -6,15 +6,6 @@ impl TesseraGridApp {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
-        // A sensitivity experiment drives the grid itself; any shortcut (undo,
-        // step, randomize) would desynchronise the control from its probe.
-        if self
-            .sensitivity
-            .as_ref()
-            .is_some_and(|experiment| !experiment.finished)
-        {
-            return;
-        }
         // Space would also activate a focused button, so let the widget win.
         let widget_focused = ctx.memory(|memory| memory.focused().is_some());
 
@@ -27,7 +18,8 @@ impl TesseraGridApp {
     }
 
     fn any_modal_open(&self) -> bool {
-        self.show_help
+        self.show_analysis
+            || self.show_help
             || self.show_about
             || self.show_gallery
             || self.show_editor
@@ -38,6 +30,7 @@ impl TesseraGridApp {
     /// Close the topmost open modal. Returns `false` when none was open.
     fn close_top_modal(&mut self) -> bool {
         for open in [
+            &mut self.show_analysis,
             &mut self.show_about,
             &mut self.show_help,
             &mut self.show_gallery,

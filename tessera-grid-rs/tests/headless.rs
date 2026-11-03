@@ -134,7 +134,25 @@ fn analysis_csv_and_cycle_detection_work() {
         text.starts_with("generation,population,density,entropy"),
         "{text}"
     );
-    assert_eq!(text.lines().count(), 7, "one header plus six generations");
+    assert_eq!(
+        text.lines().count(),
+        8,
+        "one header plus generations zero through six"
+    );
+    let rows: Vec<_> = text
+        .lines()
+        .map(|line| line.split(',').collect::<Vec<_>>())
+        .collect();
+    assert_eq!(rows[1][0], "0");
+    assert_eq!(rows[1][1], "3");
+    assert_eq!(rows[3][6], "2");
+    assert_eq!(rows[3][7], "0");
+    assert_eq!(rows[3][8], "detected");
+    assert!(text.contains(&format!(
+        "\"Blinker\",,{},active_cells",
+        env!("CARGO_PKG_VERSION")
+    )));
+    assert!(rows.iter().all(|row| row.len() == rows[0].len()));
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("cycle: period 2"), "{stdout}");
@@ -151,7 +169,11 @@ fn divergence_reports_a_growth_rate() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("# divergence:"), "{stdout}");
-    assert!(stdout.contains("# growth rate:"), "{stdout}");
+    assert!(stdout.contains("# log separation rate:"), "{stdout}");
+    assert!(
+        stdout.contains("0,1,"),
+        "generation zero is included: {stdout}"
+    );
 }
 
 #[test]
@@ -170,9 +192,13 @@ fn the_elementary_sweep_covers_every_rule() {
     let text = std::fs::read_to_string(&csv).expect("read sweep");
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 257, "header plus 256 rules");
-    assert!(lines[0].starts_with("rule,"), "{}", lines[0]);
-    assert!(lines[1].starts_with("0,"), "rule 0 comes first");
-    assert!(lines[256].starts_with("255,"), "rule 255 comes last");
+    assert!(
+        lines[0].starts_with("generation,population,"),
+        "{}",
+        lines[0]
+    );
+    assert!(lines[1].contains("\"W0\""), "rule 0 comes first");
+    assert!(lines[256].contains("\"W255\""), "rule 255 comes last");
 
     // Rule 0 clears the grid and is a fixed point from the first generation.
     let rule_zero: Vec<&str> = lines[1].split(',').collect();
@@ -220,8 +246,13 @@ fn replicates_report_mean_and_spread() {
     assert!(stdout.contains("entropy:"), "{stdout}");
 
     let text = std::fs::read_to_string(&csv).expect("read csv");
-    assert!(text.starts_with("seed,population,density,entropy,cycle_period"));
+    assert!(text.starts_with("generation,population,density,entropy,"));
     assert_eq!(text.lines().count(), 5, "header plus four replicates");
+    for (index, line) in text.lines().skip(1).enumerate() {
+        let fields: Vec<_> = line.split(',').collect();
+        assert_eq!(fields[0], "5");
+        assert_eq!(fields[15], (index + 1).to_string());
+    }
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -234,6 +265,205 @@ fn replicates_without_steps_is_an_error() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--steps"), "{stderr}");
+}
+
+#[test]
+fn invalid_or_bypassed_options_are_errors_not_successful_partial_runs() {
+    for args in [
+        vec!["--replicates", "0", "--steps", "2"],
+        vec!["--replicates", "10001", "--steps", "2"],
+        vec!["--replicates", "1", "--steps", "2", "--png", "ignored.png"],
+        vec!["--replicates", "1", "--steps", "2", "--pattern", "Unknown"],
+        vec![
+            "--replicates",
+            "2",
+            "--steps",
+            "2",
+            "--seed",
+            "18446744073709551615",
+        ],
+        vec!["--sweep-elementary", "--steps", "0"],
+        vec!["--sweep-elementary", "--steps", "2", "--seed", "1"],
+        vec!["--sweep-elementary", "--steps", "2", "--replicates", "1"],
+        vec!["--divergence", "0"],
+        vec!["--width", "0"],
+        vec!["--height", "4097"],
+        vec!["--cell-size", "65"],
+        vec!["--gif-fps", "0"],
+        vec!["--mode", "Wireworld", "--rule", "W110"],
+        vec!["--list-modes", "--steps", "2"],
+        vec!["--png", "same", "--analysis-csv", "same"],
+        vec!["--mode", "Langton's Ant", "--boundary", "fixed"],
+    ] {
+        let output = bin().args(&args).output().expect("run tessera");
+        assert!(
+            !output.status.success(),
+            "accepted invalid options: {args:?}"
+        );
+        assert!(!output.stderr.is_empty(), "missing diagnostic for {args:?}");
+    }
+}
+
+#[test]
+fn divergence_honors_patterns_and_uses_the_initial_not_final_state() {
+    let damage = |pattern: &str, steps: &str| {
+        let output = bin()
+            .args([
+                "--pattern",
+                pattern,
+                "--width",
+                "20",
+                "--height",
+                "20",
+                "--steps",
+                steps,
+                "--divergence",
+                "4",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        stdout[stdout.find("# divergence:").unwrap()..].to_owned()
+    };
+    let empty = damage("Empty", "0");
+    assert!(empty.contains("\n1,0,0.000000000,"));
+    let blinker = damage("Blinker", "0");
+    assert_ne!(empty, blinker);
+    assert_eq!(blinker, damage("Blinker", "3"));
+}
+
+#[test]
+fn elementary_damage_and_metrics_use_only_the_active_row() {
+    let output = bin()
+        .args([
+            "--rule",
+            "W204",
+            "--width",
+            "8",
+            "--height",
+            "8",
+            "--steps",
+            "3",
+            "--analyze",
+            "--divergence",
+            "4",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("population: 1"), "{stdout}");
+    assert!(stdout.contains("bounds: 1x1"), "{stdout}");
+    assert!(
+        stdout.contains("cycle: period 1 (first retained occurrence at generation 0)"),
+        "{stdout}"
+    );
+    for generation in 0..=4 {
+        assert!(
+            stdout.contains(&format!("\n{generation},1,0.125000000,")),
+            "{stdout}"
+        );
+    }
+}
+
+#[test]
+fn generated_seeds_are_reported_and_csv_is_reproducible() {
+    let dir = temp_dir("reproducible");
+    let csv = dir.join("first.csv");
+    let repeated = dir.join("second.csv");
+    let output = bin()
+        .args(["--rule", "W30", "--randomize", "--steps", "4"])
+        .arg("--analysis-csv")
+        .arg(&csv)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let seed = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("seed: "))
+        .unwrap();
+    let output = bin()
+        .args(["--rule", "W30", "--seed", seed, "--steps", "4"])
+        .arg("--analysis-csv")
+        .arg(&repeated)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        std::fs::read(&csv).unwrap(),
+        std::fs::read(&repeated).unwrap()
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn replicate_maximum_seed_does_not_wrap_or_overflow() {
+    let output = bin()
+        .args([
+            "--replicates",
+            "1",
+            "--steps",
+            "1",
+            "--seed",
+            "18446744073709551615",
+            "--width",
+            "8",
+            "--height",
+            "8",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn zero_step_csv_contains_the_initial_state() {
+    let dir = temp_dir("zero-step");
+    let csv = dir.join("initial.csv");
+    let output = bin()
+        .args(["--pattern", "Empty", "--steps", "0"])
+        .arg("--analysis-csv")
+        .arg(&csv)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = std::fs::read_to_string(csv).unwrap();
+    assert_eq!(text.lines().count(), 2);
+    assert!(text.lines().nth(1).unwrap().starts_with("0,0,"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn non_pipe_stdout_and_csv_errors_fail_the_command() {
+    use std::fs::OpenOptions;
+    let full = || OpenOptions::new().write(true).open("/dev/full").unwrap();
+    let output = bin().arg("--list-modes").stdout(full()).output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("stdout"));
+    let output = bin()
+        .args([
+            "--pattern",
+            "Empty",
+            "--steps",
+            "1",
+            "--analysis-csv",
+            "/dev/full",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("CSV"));
 }
 
 fn size(path: &Path) -> u64 {

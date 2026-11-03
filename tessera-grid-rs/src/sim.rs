@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use rayon::prelude::*;
 
 use crate::automata::{self, Automaton, Elementary1D, LifeLike, Mode};
-use crate::core::analysis::{self, Cycle, CycleWatcher, Metrics};
+use crate::core::analysis::{self, AnalysisMetadata, Cycle, CycleWatcher, Metrics};
 use crate::core::{BoundaryMode, Grid, Snapshot, UndoManager, PARALLEL_CELL_THRESHOLD};
 
 /// Number of population samples kept for the statistics panel.
@@ -80,6 +80,52 @@ impl<'a> RuleSpec<'a> {
     }
 }
 
+/// Evolution settings persisted with a grid, independent of GUI preferences.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EvolutionSettings {
+    pub boundary: BoundaryMode,
+    pub rule: String,
+}
+
+impl EvolutionSettings {
+    /// Build a validated, empty simulation with these evolution settings.
+    pub fn build(&self, mode: &str, width: usize, height: usize) -> Result<Simulation, String> {
+        let mode = Mode::from_name(mode).ok_or_else(|| format!("unknown mode '{mode}'"))?;
+        if !(MIN_GRID_SIDE..=MAX_GRID_SIDE).contains(&width)
+            || !(MIN_GRID_SIDE..=MAX_GRID_SIDE).contains(&height)
+        {
+            return Err(format!(
+                "grid size {width}x{height} is outside {MIN_GRID_SIDE}–{MAX_GRID_SIDE}"
+            ));
+        }
+        let (birth, survival) = if mode == Mode::Custom {
+            LifeLike::try_parse_bs(&self.rule)?
+        } else {
+            (vec![3], vec![2, 3])
+        };
+        let mut rules = RuleSpec::new(self.boundary, &birth, &survival);
+        if mode == Mode::Elementary1D {
+            rules.elementary = self
+                .rule
+                .strip_prefix('W')
+                .and_then(|code| code.parse().ok())
+                .ok_or_else(|| format!("invalid Elementary rule '{}'", self.rule))?;
+        }
+        let sim = Simulation::new(mode.name(), width, height, rules, "Empty");
+        if mode != Mode::Custom && sim.rule_string() != self.rule {
+            return Err(format!(
+                "rule '{}' does not match {}",
+                self.rule,
+                mode.name()
+            ));
+        }
+        if sim.boundary() != self.boundary {
+            return Err(format!("{} only supports wrap boundaries", mode.name()));
+        }
+        Ok(sim)
+    }
+}
+
 pub struct Simulation {
     automaton: Box<dyn Automaton>,
     /// Active mode name (used when rebuilding after a resize).
@@ -146,7 +192,12 @@ impl Simulation {
         let mut automaton = make_automaton(mode, width, height, rules);
         automaton.load_pattern(pattern);
         let cells = automaton.get_grid().cells.len();
-        let population = automaton.get_grid().population() as u64;
+        let (start, end) = automaton.active_rows();
+        let grid = automaton.get_grid();
+        let population = grid.cells[start * grid.width..end * grid.width]
+            .iter()
+            .filter(|&&cell| cell != 0)
+            .count() as u64;
         Self {
             automaton,
             // Store the name the engine actually built, not the raw input, so a
@@ -205,7 +256,17 @@ impl Simulation {
 
     /// Recompute the live-cell count from the grid.
     fn recount_population(&mut self) {
-        self.population = self.grid().population() as u64;
+        self.population = self
+            .active_cells()
+            .iter()
+            .filter(|&&cell| cell != 0)
+            .count() as u64;
+    }
+
+    /// Cells that determine the next generation, excluding display history.
+    pub fn active_cells(&self) -> &[u8] {
+        let (start, end) = self.active_rows();
+        &self.grid().cells[start * self.width()..end * self.width()]
     }
 
     pub fn density(&self) -> f32 {
@@ -216,23 +277,24 @@ impl Simulation {
 
     /// Metrics for the current generation.
     ///
-    /// Entropy and the bounding box cover the whole grid; for space-time modes
-    /// such as Elementary 1D that includes the drawn history.
+    /// All measurements use active cells. In Elementary mode, bounds use
+    /// coordinates within the current row (y = 0), not the space-time diagram.
     pub fn metrics(&self) -> Metrics {
-        let grid = self.grid();
+        let cells = self.active_cells();
+        let (start, end) = self.active_rows();
         Metrics {
             generation: self.generation,
             population: self.population(),
-            density: f64::from(self.density()),
-            entropy: analysis::shannon_entropy(&grid.cells),
-            bbox: analysis::bounding_box(&grid.cells, grid.width, grid.height),
-            cycle: self.cycles.cycle(),
+            density: self.population() as f64 / cells.len().max(1) as f64,
+            entropy: analysis::shannon_entropy(cells),
+            bbox: analysis::bounding_box(cells, self.width(), end - start),
+            cycle: self.cycle(),
         }
     }
 
     /// Cycle detected so far, if repeated-state detection is enabled.
     pub fn cycle(&self) -> Option<Cycle> {
-        self.cycles.cycle()
+        self.detect_cycles.then(|| self.cycles.cycle()).flatten()
     }
 
     /// Rows the automaton actually evolves (the whole grid for 2-D modes).
@@ -352,6 +414,36 @@ impl Simulation {
         self.automaton.aux_state()
     }
 
+    /// Settings taken from the engine, rather than potentially stale UI inputs.
+    pub fn evolution_settings(&self) -> EvolutionSettings {
+        EvolutionSettings {
+            boundary: self.boundary(),
+            rule: self.rule_string(),
+        }
+    }
+
+    pub fn analysis_metadata(&self, initialization: &str, seed: Option<u64>) -> AnalysisMetadata {
+        AnalysisMetadata {
+            mode: self.mode().to_owned(),
+            rule: self.rule_string(),
+            boundary: self.boundary(),
+            width: self.width(),
+            height: self.height(),
+            initialization: initialization.to_owned(),
+            seed,
+        }
+    }
+
+    /// Independent copy of the exact state, without recording or analysis history.
+    pub fn fork(&self) -> Result<Self, String> {
+        let mut copy = self
+            .evolution_settings()
+            .build(self.mode(), self.width(), self.height())?;
+        copy.record_timeline = false;
+        copy.restore_state(&self.state_cells(), &self.aux_state(), self.generation)?;
+        Ok(copy)
+    }
+
     pub fn pop_history(&self) -> &VecDeque<u64> {
         &self.pop_history
     }
@@ -388,6 +480,11 @@ impl Simulation {
 
     pub fn step(&mut self) {
         self.rewind_to_live();
+        if self.detect_cycles {
+            self.observe_cycle();
+        } else {
+            self.cycles.reset();
+        }
         if self.record_timeline && self.timeline.is_empty() {
             // Seed with the pre-step state so the scrubber can reach generation 0.
             self.push_timeline_snapshot();
@@ -411,9 +508,18 @@ impl Simulation {
             self.push_timeline_snapshot();
         }
         if self.detect_cycles {
-            self.cycles
-                .observe(self.generation, &self.automaton.get_grid().cells);
+            self.observe_cycle();
         }
+    }
+
+    fn observe_cycle(&mut self) {
+        let (start, end) = self.automaton.active_rows();
+        let grid = self.automaton.get_grid();
+        self.cycles.observe_with_aux(
+            self.generation,
+            &grid.cells[start * grid.width..end * grid.width],
+            &self.automaton.evolution_aux_state(),
+        );
     }
 
     /// Age every live cell and recount the population in one pass.
@@ -497,8 +603,11 @@ impl Simulation {
         if before == after {
             return;
         }
-        self.population -= u64::from(before != 0);
-        self.population += u64::from(after != 0);
+        let (start, end) = self.active_rows();
+        if (start..end).contains(&y) {
+            self.population -= u64::from(before != 0);
+            self.population += u64::from(after != 0);
+        }
         // The observed generation sequence no longer applies.
         self.cycles.reset();
         self.bump();
@@ -553,6 +662,8 @@ impl Simulation {
         self.automaton.set_boundary(boundary);
         // Different edges mean a different sequence of states.
         self.cycles.reset();
+        self.clear_timeline();
+        self.bump();
     }
 
     /// Apply new B/S rules to the active automaton without touching the grid.
@@ -561,6 +672,8 @@ impl Simulation {
     pub fn set_rules(&mut self, birth: &[u8], survival: &[u8]) -> bool {
         let applied = self.automaton.set_rules(birth, survival);
         if applied {
+            self.cycles.reset();
+            self.clear_timeline();
             self.bump();
         }
         applied
@@ -596,21 +709,36 @@ impl Simulation {
         let height = height.clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
         let old = if preserve {
             let grid = self.grid();
-            Some((grid.width, grid.height, grid.cells.clone()))
+            Some((
+                grid.width,
+                grid.height,
+                grid.cells.clone(),
+                self.aux_state(),
+                self.active_rows(),
+            ))
         } else {
             None
         };
         let mut automaton = make_automaton(&self.mode, width, height, rules);
-        if let Some((old_w, old_h, cells)) = old {
+        if let Some((old_w, old_h, cells, mut aux, (active_start, _))) = old {
             let mut resized = vec![0u8; width * height];
             let copy_w = old_w.min(width);
-            let copy_h = old_h.min(height);
+            let source_y = if self.mode == Mode::Elementary1D.name() {
+                active_start.saturating_sub(height - 1)
+            } else {
+                0
+            };
+            let copy_h = (old_h - source_y).min(height);
             for y in 0..copy_h {
-                let src = y * old_w;
+                let src = (y + source_y) * old_w;
                 let dst = y * width;
                 resized[dst..dst + copy_w].copy_from_slice(&cells[src..src + copy_w]);
             }
             automaton.set_cells(&resized);
+            if self.mode == Mode::Elementary1D.name() {
+                aux = ((active_start - source_y) as u64).to_le_bytes().to_vec();
+            }
+            automaton.set_aux_state(&aux);
         }
         self.automaton = automaton;
         self.generation = 0;
@@ -660,11 +788,27 @@ impl Simulation {
 
     /// Restore a state previously produced by [`Simulation::state_cells`] and
     /// [`Simulation::aux_state`], resetting every derived buffer.
-    pub fn restore_state(&mut self, cells: &[u8], aux: &[u8], generation: u64) {
+    pub fn restore_state(
+        &mut self,
+        cells: &[u8],
+        aux: &[u8],
+        generation: u64,
+    ) -> Result<(), String> {
+        if cells.len() != self.grid().cells.len() {
+            return Err("cell count does not match the grid dimensions".to_owned());
+        }
+        if cells.iter().any(|&cell| cell > self.max_state()) {
+            return Err(format!(
+                "cell state exceeds the maximum for {}",
+                self.mode()
+            ));
+        }
+        self.automaton.validate_aux_state(aux)?;
         self.automaton.set_cells(cells);
         self.automaton.set_aux_state(aux);
         self.generation = generation;
         self.reset_derived_state();
+        Ok(())
     }
 
     /// Put the grid and automaton back into a recorded state.
@@ -758,6 +902,111 @@ impl Simulation {
     pub fn clear_frames(&mut self) {
         self.frame_buffer.clear();
         self.frame_bytes = 0;
+    }
+}
+
+/// One observation in a damage-spreading experiment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DamageSample {
+    pub elapsed: u64,
+    pub distance: usize,
+    pub fraction: f64,
+}
+
+/// Isolated control/probe pair shared by the GUI and CLI.
+pub struct DamageExperiment {
+    control: Simulation,
+    probe: Simulation,
+    target: (usize, usize),
+    elapsed: u64,
+    initial_generation: u64,
+    initial_hash: u64,
+}
+
+impl DamageExperiment {
+    /// Copy the exact initial state and change one active cell in the probe.
+    pub fn new(source: &Simulation) -> Result<Self, String> {
+        let control = source.fork()?;
+        let mut probe = source.fork()?;
+        let width = source.width();
+        let (first_row, _) = source.active_rows();
+        let index = source
+            .active_cells()
+            .iter()
+            .position(|&cell| cell != 0)
+            .unwrap_or(width / 2);
+        let target = (first_row + index / width, index % width);
+        let current = probe.grid().get(target.0, target.1);
+        probe.paint(target.0, target.1, u8::from(current == 0));
+        Ok(Self {
+            control,
+            probe,
+            target,
+            elapsed: 0,
+            initial_generation: source.generation,
+            initial_hash: analysis::state_hash(&source.grid().cells)
+                ^ analysis::state_hash(&source.aux_state()).rotate_left(17),
+        })
+    }
+
+    pub fn target(&self) -> (usize, usize) {
+        self.target
+    }
+
+    pub fn control(&self) -> &Simulation {
+        &self.control
+    }
+
+    pub fn sample(&self) -> DamageSample {
+        let distance =
+            analysis::hamming_distance(self.control.active_cells(), self.probe.active_cells());
+        DamageSample {
+            elapsed: self.elapsed,
+            distance,
+            fraction: distance as f64 / self.control.active_cells().len().max(1) as f64,
+        }
+    }
+
+    pub fn step(&mut self) -> DamageSample {
+        self.control.step();
+        self.probe.step();
+        self.elapsed += 1;
+        self.sample()
+    }
+
+    /// Descriptive finite-time log separation; not a test for chaos.
+    pub fn log_separation_rate(&self) -> Option<f64> {
+        let distance = self.sample().distance;
+        (self.elapsed > 0 && distance > 0).then(|| (distance as f64).ln() / self.elapsed as f64)
+    }
+
+    pub fn write_csv_header(writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        writeln!(writer, "elapsed_steps,hamming_distance,damage_fraction,initial_generation,initial_state_hash,mode,rule,boundary,grid_width,grid_height,perturbation_x,perturbation_y,version,metric_scope")
+    }
+
+    /// CSV metadata identifies the source snapshot; save that state to replay it.
+    pub fn write_csv_sample(
+        &self,
+        writer: &mut impl std::io::Write,
+        sample: DamageSample,
+    ) -> std::io::Result<()> {
+        writeln!(
+            writer,
+            "{},{},{:.9},{},{:016x},\"{}\",\"{}\",{},{},{},{},{},{},active_cells",
+            sample.elapsed,
+            sample.distance,
+            sample.fraction,
+            self.initial_generation,
+            self.initial_hash,
+            self.control.mode(),
+            self.control.rule_string(),
+            self.control.boundary().as_str(),
+            self.control.width(),
+            self.control.height(),
+            self.target.1,
+            self.target.0,
+            env!("CARGO_PKG_VERSION")
+        )
     }
 }
 

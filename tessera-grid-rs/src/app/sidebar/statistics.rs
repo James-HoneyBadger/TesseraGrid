@@ -65,7 +65,11 @@ impl TesseraGridApp {
 
                     let metrics = self.current_metrics();
                     ui.separator();
-                    ui.label(format!("Entropy {:.3} bits/cell", metrics.entropy));
+                    ui.label(format!("Entropy {:.3} bits/cell", metrics.entropy))
+                        .on_hover_text("Shannon state-frequency entropy; not spatial complexity or a chaos classifier.");
+                    if self.sim.mode() == "Elementary 1D" {
+                        ui.weak("Active row only; diagram history is excluded. Bounds use y=0.");
+                    }
                     if let Some((x0, y0, x1, y1)) = metrics.bbox {
                         ui.label(format!(
                             "Bounds {}×{} at ({x0}, {y0})",
@@ -75,10 +79,10 @@ impl TesseraGridApp {
                     }
                     match metrics.cycle {
                         Some(cycle) => ui.label(format!(
-                            "Cycle: period {} after {} generations",
+                            "Cycle: period {} (first retained at gen {})",
                             cycle.period, cycle.transient
                         )),
-                        None => ui.weak("Cycle: none detected yet"),
+                        None => ui.weak("Cycle: none observed in retained state window"),
                     };
 
                     ui.horizontal(|ui| {

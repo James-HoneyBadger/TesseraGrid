@@ -114,6 +114,18 @@ impl Automaton for LangtonsAnt {
         self.encode_aux()
     }
 
+    fn validate_aux_state(&self, state: &[u8]) -> Result<(), String> {
+        if state.len() != 17 {
+            return Err("Ant state needs 17 bytes for position and direction".to_owned());
+        }
+        let x = u64::from_le_bytes(state[0..8].try_into().expect("8-byte x"));
+        let y = u64::from_le_bytes(state[8..16].try_into().expect("8-byte y"));
+        if x >= self.grid.width as u64 || y >= self.grid.height as u64 || state[16] > 3 {
+            return Err("Ant position or direction is outside its valid range".to_owned());
+        }
+        Ok(())
+    }
+
     fn set_aux_state(&mut self, state: &[u8]) {
         if state.len() != 17 {
             return;

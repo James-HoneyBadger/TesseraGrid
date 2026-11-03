@@ -1,8 +1,14 @@
-//! Execution of a headless run.
+//! Execution of headless runs and reproducible experiments.
+
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use super::*;
+use crate::core::analysis::{AnalysisMetadata, Metrics};
 
 pub fn run(cli: &Cli) -> Result<(), String> {
+    cli.validate()?;
     if cli.list_modes {
         for mode in ALL_MODES {
             emitln!("{mode}");
@@ -13,198 +19,245 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         return run_elementary_sweep(cli);
     }
 
-    // A Wolfram code selects the Elementary 1D mode, B/S notation selects Custom.
-    let elementary = match cli.rule.as_deref() {
-        Some(text) => parse_wolfram(text)?,
-        None => None,
-    };
-
-    let mode = if elementary.is_some() {
-        "Elementary 1D".to_owned()
-    } else if cli.rule.is_some() {
-        "Custom Rules".to_owned()
-    } else {
-        cli.mode.clone().unwrap_or_else(|| DEFAULT_MODE.to_owned())
-    };
-    if !ALL_MODES.contains(&mode.as_str()) {
+    let elementary = cli
+        .rule
+        .as_deref()
+        .map(parse_wolfram)
+        .transpose()?
+        .flatten();
+    let implied_mode = cli.rule.as_ref().map(|_| {
+        if elementary.is_some() {
+            "Elementary 1D"
+        } else {
+            "Custom Rules"
+        }
+    });
+    if let (Some(mode), Some(implied)) = (&cli.mode, implied_mode) {
+        if mode != implied {
+            return Err(format!(
+                "--rule selects '{implied}', which conflicts with --mode '{mode}'"
+            ));
+        }
+    }
+    let mode = implied_mode.or(cli.mode.as_deref()).unwrap_or(DEFAULT_MODE);
+    if !ALL_MODES.contains(&mode) {
         return Err(format!(
             "unknown mode '{mode}'. Use --list-modes to see the available modes"
         ));
     }
-
     let (birth, survival) = match (&cli.rule, elementary) {
         (Some(rule), None) => {
             LifeLike::try_parse_bs(rule).map_err(|err| format!("invalid --rule: {err}"))?
         }
         _ => (vec![3], vec![2, 3]),
     };
-
     let boundary = cli.boundary_mode()?;
-    let width = cli.grid_width().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
-    let height = cli.grid_height().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
-    let mut rule_spec = RuleSpec::new(boundary, &birth, &survival);
-    if let Some(rule) = elementary {
-        rule_spec = rule_spec.with_elementary(rule);
+    let rules = RuleSpec::new(boundary, &birth, &survival)
+        .with_elementary(elementary.unwrap_or(crate::automata::elementary::DEFAULT_RULE));
+    let mut sim = Simulation::new(mode, cli.grid_width(), cli.grid_height(), rules, "Empty");
+    sim.record_timeline = false;
+    if cli.boundary.is_some() && sim.boundary() != boundary {
+        return Err(format!("{mode} only supports wrap boundaries"));
     }
     if let Some(count) = cli.replicates {
-        return run_replicates(cli, &mode, width, height, rule_spec, count);
+        if mode == "Langton's Ant" {
+            return Err(
+                "--replicates is not supported for Langton's Ant: its initializer ignores seeds"
+                    .to_owned(),
+            );
+        }
+        return run_replicates(cli, mode, rules, count);
     }
 
-    let mut sim = Simulation::new(&mode, width, height, rule_spec, "");
-    // Timeline snapshots are a UI affordance; a scripted run does not need one
-    // grid clone per generation.
-    sim.record_timeline = false;
-
-    let pattern = cli.pattern.clone().unwrap_or_else(|| {
-        sim.available_patterns()
-            .first()
-            .copied()
-            .unwrap_or("")
-            .to_owned()
-    });
-    if !sim.available_patterns().contains(&pattern.as_str()) && pattern != "Empty" {
+    let pattern = cli
+        .pattern
+        .as_deref()
+        .unwrap_or_else(|| sim.available_patterns()[0]);
+    if !sim.available_patterns().contains(&pattern) {
         return Err(format!(
             "unknown pattern '{pattern}' for {mode}. Available: {}",
             sim.available_patterns().join(", ")
         ));
     }
-    sim.load_pattern(&pattern);
-
-    if cli.randomize || cli.seed.is_some() {
-        let seed = cli.seed.unwrap_or_else(|| {
-            std::time::SystemTime::now()
+    let randomize = cli.randomize || cli.seed.is_some() || pattern == "Random Soup";
+    let seed = if randomize {
+        Some(match cli.seed {
+            Some(seed) => seed,
+            None => std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(1)
-        });
-        sim.randomize(seed);
-    }
-
-    let recording = cli.gif.is_some();
-    sim.record_frames = recording;
-    // Repeated-state detection is what `--analyze` and the CSV report need.
-    sim.detect_cycles = cli.analyze || cli.analysis_csv.is_some();
-    let steps = cli.steps();
-    let mut series = Vec::new();
-    if steps > 0 {
-        if cli.analysis_csv.is_some() {
-            for _ in 0..steps {
-                sim.step();
-                series.push(sim.metrics());
-            }
-        } else {
-            sim.run_steps(steps, || false);
+                .map_err(|err| format!("cannot generate a random seed: {err}"))?
+                .as_nanos() as u64,
+        })
+    } else if mode == "Elementary 1D" && pattern == "Random Row" {
+        Some(0x5eed_1234)
+    } else {
+        None
+    };
+    if randomize {
+        if mode == "Langton's Ant" {
+            return Err(
+                "Langton's Ant has no randomized initializer; omit --randomize and --seed"
+                    .to_owned(),
+            );
         }
+        sim.randomize(seed.expect("random initialization has a seed"));
+    } else {
+        sim.load_pattern(pattern);
     }
+    let initialization = if randomize { "Random Soup" } else { pattern };
+    let metadata = sim.analysis_metadata(initialization, seed);
+    let experiment = cli
+        .divergence
+        .map(|_| DamageExperiment::new(&sim))
+        .transpose()?;
 
-    let cell_size = cli.cell_size().clamp(1, 64);
+    sim.record_frames = cli.gif.is_some();
+    sim.detect_cycles = cli.analyze || cli.analysis_csv.is_some();
+    let mut csv = open_metrics_csv(cli.analysis_csv.as_deref())?;
+    if let Some(writer) = &mut csv {
+        write_metrics(writer, &metadata, sim.metrics())?;
+    }
+    if csv.is_some() {
+        for _ in 0..cli.steps() {
+            sim.step();
+            if let Some(writer) = &mut csv {
+                write_metrics(writer, &metadata, sim.metrics())?;
+            }
+        }
+    } else {
+        sim.run_steps(cli.steps(), || false);
+    }
+    finish_csv(csv)?;
+
     if let Some(path) = &cli.png {
-        export::export_png(&sim.display_grid(), cell_size, path)
+        export::export_png(&sim.display_grid(), cli.cell_size(), path)
             .map_err(|err| format!("PNG export failed: {err}"))?;
     }
     if let Some(path) = &cli.gif {
-        if sim.frame_count() == 0 {
-            return Err("GIF export needs at least one recorded step (use --steps)".to_owned());
-        }
-        let delay_ms = 1000 / cli.gif_fps().clamp(1, 60);
-        let (grid_w, grid_h) = (sim.width(), sim.height());
-        export::export_gif(sim.frames(), grid_w, grid_h, cell_size, delay_ms, path)
-            .map_err(|err| format!("GIF export failed: {err}"))?;
+        let (width, height) = (sim.width(), sim.height());
+        export::export_gif(
+            sim.frames(),
+            width,
+            height,
+            cli.cell_size(),
+            1000 / cli.gif_fps(),
+            path,
+        )
+        .map_err(|err| format!("GIF export failed: {err}"))?;
     }
     if let Some(path) = &cli.rle {
-        let encoded = rle::encode(sim.grid(), &sim.rule_string());
-        std::fs::write(path, encoded)
+        std::fs::write(path, rle::encode(sim.grid(), &sim.rule_string()))
             .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
     }
-
-    if let Some(path) = &cli.analysis_csv {
-        write_analysis_csv(path, &series)?;
-    }
     if cli.analyze {
-        print_analysis(&sim, steps);
+        print_analysis(&sim, cli.steps())?;
     }
 
     emitln!("mode: {}", sim.mode());
     emitln!("rule: {}", sim.rule_string());
+    emitln!("boundary: {}", sim.boundary().as_str());
     emitln!("grid: {}x{}", sim.width(), sim.height());
-    emitln!("pattern: {pattern}");
+    emitln!("pattern: {initialization}");
+    if let Some(seed) = seed {
+        emitln!("seed: {seed}");
+    }
     emitln!("generation: {}", sim.generation);
     emitln!("population: {}", sim.population());
     emitln!("density: {:.2}%", sim.density() * 100.0);
-    if recording {
+    if sim.record_frames {
         emitln!("frames: {}", sim.frame_count());
     }
-
-    if let Some(generations) = cli.divergence {
-        run_divergence(
-            &mode,
-            width,
-            height,
-            rule_spec,
-            &pattern,
-            cli.seed.unwrap_or(1),
-            generations,
-        )?;
+    if let (Some(experiment), Some(steps)) = (experiment, cli.divergence) {
+        run_divergence(experiment, steps)?;
     }
-
     Ok(())
 }
 
-/// Repeat a randomised run with different seeds and summarise the spread.
-///
-/// One random soup is an anecdote; a scientist wants to know whether two rules
-/// differ by more than run-to-run noise.
-fn run_replicates(
-    cli: &Cli,
-    mode: &str,
-    width: usize,
-    height: usize,
-    rules: RuleSpec<'_>,
-    count: u32,
+fn open_metrics_csv(path: Option<&Path>) -> Result<Option<BufWriter<File>>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let file =
+        File::create(path).map_err(|err| format!("cannot create {}: {err}", path.display()))?;
+    let mut writer = BufWriter::new(file);
+    AnalysisMetadata::write_header(&mut writer)
+        .map_err(|err| format!("CSV header failed: {err}"))?;
+    Ok(Some(writer))
+}
+
+fn write_metrics(
+    writer: &mut impl Write,
+    metadata: &AnalysisMetadata,
+    metrics: Metrics,
 ) -> Result<(), String> {
-    use rayon::prelude::*;
+    metadata
+        .write_row(writer, metrics)
+        .map_err(|err| format!("CSV write failed: {err}"))
+}
 
-    let steps = cli.steps();
-    if steps == 0 {
-        return Err("--replicates needs --steps to run generations".to_owned());
+fn finish_csv(writer: Option<BufWriter<File>>) -> Result<(), String> {
+    if let Some(mut writer) = writer {
+        writer
+            .flush()
+            .map_err(|err| format!("CSV flush failed: {err}"))?;
     }
-    let count = u64::from(count.clamp(1, 10_000));
+    Ok(())
+}
+
+fn run_replicates(cli: &Cli, mode: &str, rules: RuleSpec<'_>, count: u32) -> Result<(), String> {
+    let mut csv = open_metrics_csv(cli.analysis_csv.as_deref())?;
     let base_seed = cli.seed.unwrap_or(1);
-
-    let samples: Vec<crate::core::analysis::Metrics> = (0..count)
-        .into_par_iter()
-        .map(|index| {
-            let mut sim = Simulation::new(mode, width, height, rules, "");
-            sim.record_timeline = false;
-            sim.detect_cycles = true;
-            sim.randomize(base_seed.wrapping_add(index));
-            sim.run_steps(steps, || false);
-            sim.metrics()
-        })
-        .collect();
-
-    let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len().max(1) as f64;
+    let mut samples = Vec::with_capacity(count as usize);
+    // One simulation at a time bounds grid and exact-cycle retention memory.
+    for index in 0..count {
+        let seed = base_seed + u64::from(index);
+        let mut sim = Simulation::new(mode, cli.grid_width(), cli.grid_height(), rules, "Empty");
+        sim.record_timeline = false;
+        sim.detect_cycles = true;
+        sim.randomize(seed);
+        sim.run_steps(cli.steps(), || false);
+        let metrics = sim.metrics();
+        if let Some(writer) = &mut csv {
+            write_metrics(
+                writer,
+                &sim.analysis_metadata("Random Soup", Some(seed)),
+                metrics,
+            )?;
+        }
+        samples.push(metrics);
+    }
+    finish_csv(csv)?;
+    let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len() as f64;
     let deviation = |values: &[f64]| {
         let average = mean(values);
         (values
             .iter()
             .map(|value| (value - average).powi(2))
             .sum::<f64>()
-            / values.len().max(1) as f64)
+            / values.len() as f64)
             .sqrt()
     };
-
-    let populations: Vec<f64> = samples.iter().map(|m| m.population as f64).collect();
-    let entropies: Vec<f64> = samples.iter().map(|m| m.entropy).collect();
-    let periods: Vec<u64> = samples
+    let populations: Vec<f64> = samples
         .iter()
-        .filter_map(|m| m.cycle.map(|cycle| cycle.period))
+        .map(|metrics| metrics.population as f64)
         .collect();
-
+    let entropies: Vec<f64> = samples.iter().map(|metrics| metrics.entropy).collect();
+    let mut periods = std::collections::BTreeMap::<u64, usize>::new();
+    for cycle in samples.iter().filter_map(|metrics| metrics.cycle) {
+        *periods.entry(cycle.period).or_default() += 1;
+    }
     emitln!(
-        "# replicates: {count} (seeds {base_seed}..{}), random soup per seed, {steps} generations",
-        base_seed.wrapping_add(count - 1)
+        "# replicates: {count} (seeds {base_seed}..{}), random soup per seed, {} generations",
+        base_seed + (u64::from(count) - 1),
+        cli.steps()
     );
+    emitln!("mode: {mode}");
+    emitln!(
+        "rule: {}",
+        Simulation::new(mode, 1, 1, rules, "Empty").rule_string()
+    );
+    emitln!("boundary: {}", rules.boundary.as_str());
+    emitln!("grid: {}x{}", cli.grid_width(), cli.grid_height());
     emitln!(
         "population: mean {:.1}  sd {:.1}  min {:.0}  max {:.0}",
         mean(&populations),
@@ -220,120 +273,67 @@ fn run_replicates(
         mean(&entropies),
         deviation(&entropies)
     );
-    emitln!("cycles:     {} of {count} settled", periods.len());
+    emitln!("# sd uses the population denominator N; metrics cover active cells");
+    emitln!(
+        "cycles:     {} of {count} observed (bounded exact-state retention)",
+        periods.values().sum::<usize>()
+    );
     if !periods.is_empty() {
-        let mut histogram: std::collections::BTreeMap<u64, usize> =
-            std::collections::BTreeMap::new();
-        for period in &periods {
-            *histogram.entry(*period).or_default() += 1;
-        }
-        let summary: Vec<String> = histogram
+        let histogram: Vec<_> = periods
             .iter()
             .map(|(period, count)| format!("period {period}: {count}"))
             .collect();
-        emitln!("periods:    {}", summary.join(", "));
-    }
-
-    if let Some(path) = &cli.analysis_csv {
-        let mut out = String::from("seed,population,density,entropy,cycle_period\n");
-        for (index, metrics) in samples.iter().enumerate() {
-            out.push_str(&format!(
-                "{},{},{:.6},{:.6},{}\n",
-                base_seed.wrapping_add(index as u64),
-                metrics.population,
-                metrics.density,
-                metrics.entropy,
-                metrics.cycle.map_or(0, |cycle| cycle.period)
-            ));
-        }
-        std::fs::write(path, out)
-            .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+        emitln!("periods:    {}", histogram.join(", "));
     }
     Ok(())
 }
 
-/// Run every elementary rule and report one row of metrics per rule.
-///
-/// This is the cheapest way to see Wolfram's four classes side by side: stable
-/// rules settle into a short cycle, chaotic rules keep high entropy and no cycle.
 fn run_elementary_sweep(cli: &Cli) -> Result<(), String> {
-    use rayon::prelude::*;
-
-    let boundary = cli.boundary_mode()?;
-    let width = cli.grid_width().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
-    let height = cli.grid_height().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
-    let steps = cli.steps().max(1);
-
-    let rows: Vec<String> = (0..=255u8)
-        .into_par_iter()
-        .map(|rule| {
-            let mut sim = Simulation::new(
-                "Elementary 1D",
-                width,
-                height,
-                RuleSpec::new(boundary, &[3], &[2, 3]).with_elementary(rule),
-                "Single Cell",
-            );
-            sim.record_timeline = false;
-            sim.detect_cycles = true;
-            sim.run_steps(steps, || false);
-
-            let metrics = sim.metrics();
-            let (bounds_width, bounds_height) = metrics
-                .bbox
-                .map_or((0, 0), |(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1));
-            format!(
-                "{rule},{},{:.6},{:.6},{bounds_width},{bounds_height},{}\n",
-                metrics.population,
-                metrics.density,
-                metrics.entropy,
-                metrics.cycle.map_or(0, |cycle| cycle.period)
-            )
-        })
-        .collect();
-
-    let mut table =
-        String::from("rule,population,density,entropy,bounds_width,bounds_height,cycle_period\n");
-    for row in rows {
-        table.push_str(&row);
+    let mut csv = open_metrics_csv(cli.analysis_csv.as_deref())?;
+    if csv.is_none() {
+        let mut header = Vec::new();
+        AnalysisMetadata::write_header(&mut header)
+            .map_err(|err| format!("CSV header failed: {err}"))?;
+        write_stdout(&String::from_utf8(header).expect("CSV is UTF-8"))?;
     }
-
-    match &cli.analysis_csv {
-        Some(path) => {
-            std::fs::write(path, &table)
-                .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
-            emitln!(
-                "swept 256 elementary rules ({steps} generations) into {}",
-                path.display()
-            );
+    for rule in 0..=255u8 {
+        let mut sim = Simulation::new(
+            "Elementary 1D",
+            cli.grid_width(),
+            cli.grid_height(),
+            RuleSpec::new(cli.boundary_mode()?, &[3], &[2, 3]).with_elementary(rule),
+            "Single Cell",
+        );
+        sim.record_timeline = false;
+        sim.detect_cycles = true;
+        sim.run_steps(cli.steps(), || false);
+        let metadata = sim.analysis_metadata("Single Cell", None);
+        if let Some(writer) = &mut csv {
+            write_metrics(writer, &metadata, sim.metrics())?;
+        } else {
+            let mut row = Vec::new();
+            write_metrics(&mut row, &metadata, sim.metrics())?;
+            write_stdout(&String::from_utf8(row).expect("CSV is UTF-8"))?;
         }
-        None => write_stdout(&table),
+    }
+    finish_csv(csv)?;
+    if let Some(path) = &cli.analysis_csv {
+        emitln!(
+            "swept 256 elementary rules ({} generations) into {}",
+            cli.steps(),
+            path.display()
+        );
     }
     Ok(())
 }
 
-/// Write one row per generation: the numbers a scientist would plot.
-fn write_analysis_csv(
-    path: &std::path::Path,
-    series: &[crate::core::analysis::Metrics],
-) -> Result<(), String> {
-    let mut out =
-        String::from("generation,population,density,entropy,bounds_width,bounds_height\n");
-    for metrics in series {
-        let (width, height) = metrics
-            .bbox
-            .map_or((0, 0), |(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1));
-        out.push_str(&format!(
-            "{},{},{:.6},{:.6},{width},{height}\n",
-            metrics.generation, metrics.population, metrics.density, metrics.entropy
-        ));
-    }
-    std::fs::write(path, out).map_err(|err| format!("cannot write {}: {err}", path.display()))
-}
-
-fn print_analysis(sim: &Simulation, steps: u64) {
+fn print_analysis(sim: &Simulation, steps: u64) -> Result<(), String> {
     let metrics = sim.metrics();
-    emitln!("entropy: {:.4} bits/cell", metrics.entropy);
+    emitln!("metric scope: active cells (Elementary: current row, y=0)");
+    emitln!(
+        "entropy: {:.4} bits/cell (state-frequency entropy, not spatial complexity)",
+        metrics.entropy
+    );
     match metrics.bbox {
         Some((x0, y0, x1, y1)) => {
             emitln!("bounds: {}x{} at ({x0}, {y0})", x1 - x0 + 1, y1 - y0 + 1)
@@ -342,70 +342,49 @@ fn print_analysis(sim: &Simulation, steps: u64) {
     }
     match metrics.cycle {
         Some(cycle) => emitln!(
-            "cycle: period {} after {} generations",
+            "cycle: period {} (first retained occurrence at generation {})",
             cycle.period,
             cycle.transient
         ),
-        None => emitln!("cycle: none within {steps} generations"),
+        None => emitln!(
+            "cycle: none observed within {steps} generations (bounded exact-state retention)"
+        ),
     }
-    if let Some(cycle) = metrics.cycle {
-        if cycle.period == 1 {
-            emitln!("note: the state is a still life (fixed point)");
-        }
-    }
-}
-
-/// Two runs that differ by a single cell, measured generation by generation.
-///
-/// A positive growth rate means nearby initial conditions separate, which is
-/// the defining behaviour of a chaotic rule; a rate near zero means the rule is
-/// stable and predictable.
-#[allow(clippy::too_many_arguments)]
-fn run_divergence(
-    mode: &str,
-    width: usize,
-    height: usize,
-    rules: RuleSpec<'_>,
-    pattern: &str,
-    seed: u64,
-    steps: u64,
-) -> Result<(), String> {
-    let mut control = Simulation::new(mode, width, height, rules, pattern);
-    let mut perturbed = Simulation::new(mode, width, height, rules, pattern);
-    control.randomize(seed);
-    perturbed.randomize(seed);
-
-    // Flip the first live cell so the perturbation cannot be a no-op: flipping
-    // an already-doomed cell can leave the two runs identical after a step.
-    let (first_row, last_row) = control.active_rows();
-    let mut target = (first_row, control.width() / 2);
-    'search: for y in first_row..last_row {
-        for x in 0..control.width() {
-            if perturbed.grid().get(y, x) != 0 {
-                target = (y, x);
-                break 'search;
-            }
-        }
-    }
-    let current = perturbed.grid().get(target.0, target.1);
-    perturbed.paint(target.0, target.1, if current == 0 { 1 } else { 0 });
-
-    emitln!("# divergence: one perturbed cell, seed {seed}");
-    emitln!("# generation,hamming_distance");
-    let mut distance = 0;
-    for generation in 1..=steps.max(1) {
-        control.step();
-        perturbed.step();
-        distance = hamming_distance(&control.grid().cells, &perturbed.grid().cells);
-        if generation <= 10 || generation % 10 == 0 || generation == steps {
-            emitln!("{generation},{distance}");
-        }
-    }
-    if distance > 0 {
-        let rate = (distance as f64).ln() / steps.max(1) as f64;
-        emitln!("# growth rate: {rate:.4} per generation (ln distance / steps)");
-    } else {
-        emitln!("# growth rate: 0 (the perturbation died out)");
+    if metrics.cycle.is_some_and(|cycle| cycle.period == 1) {
+        emitln!("note: the active evolution state is a fixed point");
     }
     Ok(())
+}
+
+fn run_divergence(mut experiment: DamageExperiment, steps: u64) -> Result<(), String> {
+    let (y, x) = experiment.target();
+    emitln!(
+        "# divergence: damage spreading from configured initial state, perturbation at ({x}, {y})"
+    );
+    let mut buffer = Vec::new();
+    DamageExperiment::write_csv_header(&mut buffer)
+        .map_err(|err| format!("damage CSV header failed: {err}"))?;
+    write_stdout(&String::from_utf8(buffer).expect("CSV is UTF-8"))?;
+    let initial = experiment.sample();
+    write_damage_sample(&experiment, initial)?;
+    for _ in 0..steps {
+        let sample = experiment.step();
+        write_damage_sample(&experiment, sample)?;
+    }
+    match experiment.log_separation_rate() {
+        Some(rate) => emitln!("# log separation rate: {rate:.6} per generation (ln distance / steps; not proof of chaos)"),
+        None => emitln!("# log separation rate: undefined (this perturbation died out)"),
+    }
+    Ok(())
+}
+
+fn write_damage_sample(
+    experiment: &DamageExperiment,
+    sample: crate::sim::DamageSample,
+) -> Result<(), String> {
+    let mut buffer = Vec::new();
+    experiment
+        .write_csv_sample(&mut buffer, sample)
+        .map_err(|err| format!("damage CSV write failed: {err}"))?;
+    write_stdout(&String::from_utf8(buffer).expect("CSV is UTF-8"))
 }

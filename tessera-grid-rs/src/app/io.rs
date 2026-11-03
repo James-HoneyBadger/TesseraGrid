@@ -3,10 +3,10 @@
 use super::*;
 
 /// Current `.tessera` file schema version.
-const STATE_VERSION: u32 = 2;
+const STATE_VERSION: u32 = 3;
 
 fn state_version() -> u32 {
-    STATE_VERSION
+    1
 }
 
 /// Grid snapshot written to `.tessera` state files.
@@ -26,9 +26,24 @@ struct SavedState {
     cells: Vec<u8>,
     #[serde(default)]
     aux: Vec<u8>,
+    #[serde(default)]
+    settings: Option<crate::sim::EvolutionSettings>,
 }
 
 impl SavedState {
+    fn capture(sim: &Simulation) -> Self {
+        Self {
+            version: STATE_VERSION,
+            automaton: sim.mode().to_owned(),
+            generation: sim.generation,
+            width: sim.width(),
+            height: sim.height(),
+            cells: sim.state_cells(),
+            aux: sim.aux_state(),
+            settings: Some(sim.evolution_settings()),
+        }
+    }
+
     /// Reject dimensions the engine cannot honour.
     ///
     /// The file is arbitrary user input, so a hand-written (or corrupt) header
@@ -41,6 +56,15 @@ impl SavedState {
                 "file version {} is newer than this build understands ({STATE_VERSION})",
                 self.version
             ));
+        }
+        if self.version == 0 {
+            return Err("unsupported state version 0".to_owned());
+        }
+        if automata::Mode::from_name(&self.automaton).is_none() {
+            return Err(format!("unknown mode '{}'", self.automaton));
+        }
+        if self.version >= 3 && self.settings.is_none() {
+            return Err("state file is missing evolution settings".to_owned());
         }
         if !(crate::sim::MIN_GRID_SIDE..=crate::sim::MAX_GRID_SIDE).contains(&self.width)
             || !(crate::sim::MIN_GRID_SIDE..=crate::sim::MAX_GRID_SIDE).contains(&self.height)
@@ -63,6 +87,27 @@ impl SavedState {
             ));
         }
         Ok(())
+    }
+
+    fn simulation(&self) -> Result<Simulation, String> {
+        self.validate()?;
+        let mut sim = match &self.settings {
+            Some(settings) => settings.build(&self.automaton, self.width, self.height)?,
+            None => Simulation::new(
+                &self.automaton,
+                self.width,
+                self.height,
+                RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+                "Empty",
+            ),
+        };
+        let aux = if self.version < 3 && self.aux.is_empty() {
+            sim.aux_state()
+        } else {
+            self.aux.clone()
+        };
+        sim.restore_state(&self.cells, &aux, self.generation)?;
+        Ok(sim)
     }
 }
 
@@ -179,16 +224,7 @@ impl TesseraGridApp {
             .add_filter("Tessera Grid state", &["tessera", "lifegrid"])
             .save_file()
         {
-            let (w, h) = (self.sim.width(), self.sim.height());
-            let state = SavedState {
-                version: STATE_VERSION,
-                automaton: self.selected_mode.clone(),
-                generation: self.sim.generation,
-                width: w,
-                height: h,
-                cells: self.sim.state_cells(),
-                aux: self.sim.aux_state(),
-            };
+            let state = SavedState::capture(&self.sim);
             match serde_json::to_string_pretty(&state) {
                 Ok(text) => match std::fs::write(&path, &text) {
                     Ok(()) => self.set_status(format!("Saved {}", path.display())),
@@ -207,38 +243,42 @@ impl TesseraGridApp {
             match std::fs::read_to_string(&path) {
                 Ok(text) => match serde_json::from_str::<SavedState>(&text) {
                     Ok(state) => {
-                        if let Err(err) = state.validate() {
-                            self.set_status(format!("Parse error: {err}"));
-                            return;
+                        let mut sim = match state.simulation() {
+                            Ok(sim) => sim,
+                            Err(err) => {
+                                self.set_status(format!("Parse error: {err}"));
+                                return;
+                            }
+                        };
+                        sim.detect_cycles = self.sim.detect_cycles;
+                        self.selected_boundary = sim.boundary();
+                        self.selected_mode = sim.mode().to_owned();
+                        if self.selected_mode == "Custom Rules" {
+                            self.custom_rule_str = sim.rule_string();
+                            (self.custom_birth, self.custom_survival) =
+                                LifeLike::try_parse_bs(&self.custom_rule_str)
+                                    .expect("validated saved rule");
+                        } else if self.selected_mode == "Elementary 1D" {
+                            self.elementary_rule = sim.rule_string()[1..]
+                                .parse()
+                                .expect("validated Wolfram rule");
                         }
-                        self.sim.rebuild(
-                            &state.automaton,
-                            state.width,
-                            state.height,
-                            RuleSpec::new(
-                                self.selected_boundary,
-                                &self.custom_birth,
-                                &self.custom_survival,
-                            )
-                            .with_elementary(self.elementary_rule),
-                            "",
-                        );
-                        self.sim
-                            .restore_state(&state.cells, &state.aux, state.generation);
-                        self.selected_mode =
-                            automata::canonical_mode_name(&state.automaton).to_owned();
-                        self.selected_pattern = self
-                            .sim
-                            .available_patterns()
-                            .first()
-                            .copied()
-                            .unwrap_or("")
-                            .to_owned();
+                        self.sim = sim;
+                        self.iso_cache = None;
+                        self.metrics_cache = None;
+                        self.selected_pattern = "Empty".to_owned();
                         self.running = false;
+                        self.run_n_pending = 0;
+                        self.paint_state = self.paint_state.min(self.sim.max_state()).max(1);
                         self.viewport_offset = Vec2::ZERO;
                         self.selection = None;
                         self.selection_anchor = None;
-                        self.set_status(format!("Loaded {}", path.display()));
+                        let warning = if state.version < 3 {
+                            "; legacy file: missing settings use wrap and default rules; missing auxiliary state uses defaults"
+                        } else {
+                            ""
+                        };
+                        self.set_status(format!("Loaded {}{warning}", path.display()));
                     }
                     Err(e) => self.set_status(format!("Parse error: {e}")),
                 },
@@ -262,6 +302,10 @@ mod tests {
             height,
             cells,
             aux: Vec::new(),
+            settings: Some(crate::sim::EvolutionSettings {
+                boundary: crate::core::BoundaryMode::Wrap,
+                rule: "B3/S23".to_owned(),
+            }),
         }
     }
 
@@ -279,15 +323,7 @@ mod tests {
         );
         sim.run_steps(5, || false);
 
-        let saved = SavedState {
-            version: STATE_VERSION,
-            automaton: "Langton's Ant".to_owned(),
-            generation: sim.generation,
-            width: 8,
-            height: 8,
-            cells: sim.state_cells(),
-            aux: sim.aux_state(),
-        };
+        let saved = SavedState::capture(&sim);
         assert!(
             saved.cells.iter().all(|&state| state <= 1),
             "the render marker must not reach the file"
@@ -298,17 +334,12 @@ mod tests {
         let loaded: SavedState = serde_json::from_str(&text).expect("deserialise");
         loaded.validate().expect("valid");
 
-        let mut restored = Simulation::new(
-            &loaded.automaton,
-            loaded.width,
-            loaded.height,
-            RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
-            "Empty",
-        );
-        restored.restore_state(&loaded.cells, &loaded.aux, loaded.generation);
-        // This used to panic with "attempt to subtract with overflow".
+        let mut restored = loaded.simulation().expect("restore");
+        sim.step();
         restored.step();
         assert_eq!(restored.generation, 6);
+        assert_eq!(restored.state_cells(), sim.state_cells());
+        assert_eq!(restored.aux_state(), sim.aux_state());
     }
 
     #[test]
@@ -350,5 +381,53 @@ mod tests {
             .validate()
             .expect_err("short cell list must be rejected");
         assert!(err.contains("do not match"), "{err}");
+    }
+
+    #[test]
+    fn rules_and_boundaries_round_trip_future_evolution() {
+        use crate::core::BoundaryMode;
+        use crate::sim::{RuleSpec, Simulation};
+
+        for boundary in BoundaryMode::all().iter().copied() {
+            for mode in ["Custom Rules", "Elementary 1D"] {
+                let mut original = Simulation::new(
+                    mode,
+                    11,
+                    7,
+                    RuleSpec::new(boundary, &[0, 3, 6], &[1, 2, 3]).with_elementary(30),
+                    "Empty",
+                );
+                original.randomize(42);
+                original.run_steps(4, || false);
+                let text = serde_json::to_string(&SavedState::capture(&original)).unwrap();
+                let saved: SavedState = serde_json::from_str(&text).unwrap();
+                let mut loaded = saved.simulation().unwrap();
+                assert_eq!(loaded.evolution_settings(), original.evolution_settings());
+                assert_eq!(loaded.metrics(), original.metrics());
+                for _ in 0..15 {
+                    original.step();
+                    loaded.step();
+                    assert_eq!(loaded.state_cells(), original.state_cells());
+                    assert_eq!(loaded.aux_state(), original.aux_state());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn corrupt_state_is_rejected_before_it_replaces_the_working_simulation() {
+        let mut saved = state(4, 3, vec![0; 12]);
+        saved.cells[0] = 2;
+        assert!(saved.simulation().is_err());
+        saved.cells[0] = 0;
+        saved.settings = None;
+        assert!(saved.simulation().is_err());
+        saved.version = 2;
+        assert!(
+            saved.simulation().is_ok(),
+            "legacy files use explicit documented defaults"
+        );
+        saved.automaton = "Unknown".to_owned();
+        assert!(saved.simulation().is_err());
     }
 }

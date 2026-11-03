@@ -4,7 +4,7 @@
 //! so they can assert on the derived state that the UI relies on.
 
 use tessera_grid::core::BoundaryMode;
-use tessera_grid::sim::{RuleSpec, Simulation, MAX_GRID_SIDE};
+use tessera_grid::sim::{DamageExperiment, RuleSpec, Simulation, MAX_GRID_SIDE};
 
 fn conway(width: usize, height: usize) -> Simulation {
     Simulation::new(
@@ -241,7 +241,8 @@ fn saved_ant_state_round_trips_with_position_and_heading() {
     sim.run_steps(9, || false);
     let later = sim.state_cells();
 
-    sim.restore_state(&cells, &aux, generation);
+    sim.restore_state(&cells, &aux, generation)
+        .expect("valid saved state");
     assert_eq!(sim.generation, 9);
     assert_eq!(sim.state_cells(), cells, "cells restore exactly");
     assert_eq!(
@@ -396,4 +397,184 @@ fn undoing_invalidates_the_detected_cycle() {
 
     assert!(sim.undo());
     assert_eq!(sim.cycle(), None, "a jump in history resets detection");
+}
+
+fn elementary(rule: u8, height: usize, pattern: &str) -> Simulation {
+    Simulation::new(
+        "Elementary 1D",
+        8,
+        height,
+        RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]).with_elementary(rule),
+        pattern,
+    )
+}
+
+fn assert_active_population(sim: &Simulation) {
+    let expected = sim.active_cells().iter().filter(|&&cell| cell != 0).count() as u64;
+    assert_eq!(sim.population(), expected);
+    assert!(sim.density() <= 1.0);
+    assert_eq!(sim.metrics().population, expected);
+}
+
+#[test]
+fn elementary_history_edits_do_not_affect_active_population_or_underflow() {
+    let mut sim = elementary(0, 8, "Single Cell");
+    sim.step();
+    assert_eq!(sim.population(), 0);
+    sim.paint(0, 4, 0);
+    assert_active_population(&sim);
+    sim.paint(0, 4, 1);
+    assert_active_population(&sim);
+    sim.edit_cells(|cells| cells[1] = 1);
+    assert_active_population(&sim);
+}
+
+#[test]
+fn elementary_restore_undo_scrub_and_resize_preserve_the_active_frontier() {
+    let mut sim = elementary(204, 8, "Single Cell");
+    sim.run_steps(3, || false);
+    let cells = sim.state_cells();
+    let aux = sim.aux_state();
+    sim.restore_state(&cells, &aux, 3).unwrap();
+    assert_eq!(sim.population(), 1);
+    assert_active_population(&sim);
+    sim.push_undo();
+    sim.paint(3, 4, 0);
+    sim.undo();
+    assert_active_population(&sim);
+    sim.step();
+    assert!(sim.scrub(0));
+    assert_active_population(&sim);
+    sim.resize(
+        8,
+        2,
+        RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]).with_elementary(204),
+        true,
+    );
+    assert_eq!(sim.population(), 1, "cropping retains the most recent row");
+    sim.step();
+    assert_eq!(sim.population(), 1);
+    assert_active_population(&sim);
+}
+
+#[test]
+fn elementary_metrics_and_cycles_do_not_depend_on_diagram_height() {
+    for height in [1, 2, 8] {
+        let mut sim = elementary(1, height, "Empty");
+        sim.detect_cycles = true;
+        sim.run_steps(3, || false);
+        assert_eq!(sim.population(), 8);
+        assert_eq!(sim.metrics().entropy, 0.0, "uniform active row");
+        assert_eq!(sim.metrics().bbox, Some((0, 0, 7, 0)));
+        let cycle = sim.cycle().unwrap();
+        assert_eq!(cycle.period, 2);
+        assert_eq!(cycle.transient, 0);
+    }
+}
+
+#[test]
+fn cycles_include_initial_generation_and_all_ant_state() {
+    let mut blinker = conway(20, 20);
+    blinker.load_pattern("Blinker");
+    blinker.detect_cycles = true;
+    blinker.run_steps(2, || false);
+    assert_eq!(blinker.cycle().unwrap().transient, 0);
+    assert_eq!(blinker.cycle().unwrap().period, 2);
+    let mut sim = ant(1, 2);
+    sim.detect_cycles = true;
+    sim.run_steps(5, || false);
+    assert_eq!(sim.cycle().unwrap().period, 4);
+    assert_eq!(sim.cycle().unwrap().transient, 0);
+}
+
+#[test]
+fn changing_rules_or_boundaries_invalidates_cycles_and_the_metrics_revision() {
+    let mut sim = Simulation::new(
+        "Custom Rules",
+        8,
+        8,
+        RuleSpec::new(BoundaryMode::Wrap, &[3], &[2, 3]),
+        "Empty",
+    );
+    sim.detect_cycles = true;
+    sim.step();
+    assert_eq!(sim.cycle().unwrap().period, 1);
+    let revision = sim.revision();
+    assert!(sim.set_rules(&[0], &[]));
+    assert_eq!(sim.cycle(), None);
+    assert!(sim.revision() > revision);
+    sim.step();
+    assert_eq!(sim.population(), 64);
+    sim.step();
+    assert_eq!(sim.cycle().unwrap().period, 2);
+    let revision = sim.revision();
+    sim.set_boundary(BoundaryMode::Fixed);
+    assert!(sim.revision() > revision);
+    assert_eq!(sim.cycle(), None);
+}
+
+#[test]
+fn invalid_restore_is_rejected_without_partial_mutation() {
+    let mut sim = ant(8, 8);
+    sim.run_steps(4, || false);
+    let (cells, aux, generation) = (sim.state_cells(), sim.aux_state(), sim.generation);
+    assert!(sim.restore_state(&cells[..2], &aux, 0).is_err());
+    assert!(sim.restore_state(&cells, &[0], 0).is_err());
+    assert!(sim.restore_state(&[2; 64], &aux, 0).is_err());
+    assert_eq!(sim.state_cells(), cells);
+    assert_eq!(sim.aux_state(), aux);
+    assert_eq!(sim.generation, generation);
+}
+
+#[test]
+fn damage_experiments_use_exact_state_and_not_display_history() {
+    for height in [1, 8] {
+        let mut sim = elementary(204, height, "Single Cell");
+        sim.run_steps(3, || false);
+        let (cells, aux, generation) = (sim.state_cells(), sim.aux_state(), sim.generation);
+        let mut experiment = DamageExperiment::new(&sim).unwrap();
+        assert_eq!(experiment.control().state_cells(), cells);
+        assert_eq!(experiment.control().aux_state(), aux);
+        assert_eq!(experiment.control().generation, generation);
+        assert_eq!(experiment.sample().distance, 1);
+        assert_eq!(experiment.sample().fraction, 1.0 / 8.0);
+        for _ in 0..4 {
+            assert_eq!(
+                experiment.step().distance,
+                1,
+                "history is not accumulated damage"
+            );
+        }
+
+        assert_eq!(sim.state_cells(), cells, "source is unchanged");
+        assert_eq!(experiment.log_separation_rate(), Some(0.0));
+    }
+}
+
+#[test]
+fn forks_preserve_future_evolution_for_every_mode() {
+    for mode in tessera_grid::automata::ALL_MODES {
+        let mut original = Simulation::new(
+            mode,
+            11,
+            9,
+            RuleSpec::new(BoundaryMode::Wrap, &[0, 3], &[1, 2, 3]).with_elementary(30),
+            "Empty",
+        );
+        original.randomize(42);
+        original.run_steps(3, || false);
+        let mut fork = original.fork().unwrap();
+        assert_eq!(
+            fork.evolution_settings(),
+            original.evolution_settings(),
+            "{mode}"
+        );
+        for _ in 0..10 {
+            original.step();
+            fork.step();
+            assert_eq!(fork.state_cells(), original.state_cells(), "{mode}");
+            assert_eq!(fork.aux_state(), original.aux_state(), "{mode}");
+            assert_eq!(fork.population(), original.population(), "{mode}");
+        }
+    }
 }

@@ -45,14 +45,16 @@ rename, themes, timeline and pattern editor.
   including generation and the ant's position.
 - **Live statistics** — population chart with axes, peak/min/average, entropy,
   bounding box, cycle period, and CSV export.
-- **Analysis panel** — run a sensitivity experiment (two grids one cell apart,
-  plotted generation by generation) or sweep all 256 elementary rules, from the
-  menu or the statistics card.
+- **Analysis panel** — isolated damage-spreading experiments (two copies one cell
+  apart, plotted from generation zero) and cancellable, incremental sweeps of all
+  256 elementary rules. Neither experiment changes the working grid.
 - **Universal computation** — Rule 110 (Turing complete), plus the Game of Life,
   Wireworld (with a circulating-signal clock) and Langton's Ant, with the tooling
   to study them: seeded runs, cycle detection, parameter sweeps and
   sensitivity-to-perturbation experiments.
-- **Session state** — save/load `.tessera` JSON files (legacy `.lifegrid` files still load); UI settings persist.
+- **Session state** — version-3 `.tessera` JSON stores cells, auxiliary state,
+  rules and boundary conditions for reproducible continuation. Legacy files use
+  default settings with an explicit warning; UI preferences persist separately.
 - **Multi-threaded stepping** — neighbour counting and cell updates run on all
   cores via Rayon.
 - **Headless CLI** — drive the same engine from scripts and CI.
@@ -147,10 +149,10 @@ straightforward. With no arguments the window opens.
 | `--rle <PATH>` | Write the final grid as RLE |
 | `--stats` | Print final statistics |
 | `--analyze` | Print entropy, bounds, bounding box and cycle information |
-| `--analysis-csv <PATH>` | Write per-generation metrics as CSV |
-| `--divergence <N>` | Measure how quickly two runs differing by one cell separate |
+| `--analysis-csv <PATH>` | Stream active-state metrics and run metadata as CSV; time series include generation 0 |
+| `--divergence <N>` | Measure damage spreading from two copies of the configured initial state, for N positive steps |
 | `--sweep-elementary` | Run all 256 elementary rules and print one metrics row each |
-| `--replicates <N>` | Repeat a random run over N seeds and report mean and standard deviation |
+| `--replicates <N>` | Repeat a random run over 1–10,000 seeds and report mean and population standard deviation |
 | `--list-modes` | List modes and exit |
 
 Examples:
@@ -225,11 +227,12 @@ Choose **Custom Rules** and type B/S notation, for example:
 
 ### Saving and exporting
 
-- **State files** (`.tessera`) are versioned JSON containing the mode,
-  generation, size, cell buffer, and automaton state that lives outside the grid
-  (Langton's Ant position and heading). Only canonical cell states are written —
-  render-only markers never reach a file — and legacy `.lifegrid` files still
-  open.
+- **State files** (`.tessera`) are versioned JSON containing the mode, rules,
+  boundary conditions, generation, size, cell buffer, and automaton state that
+  lives outside the grid (Langton's Ant position and heading). Only canonical
+  cell states are written — render-only markers never reach a file. Legacy
+  `.lifegrid` files use default evolution settings with a warning; invalid cell
+  states or auxiliary data are rejected rather than silently repaired.
 - **RLE** uses standard Golly/LifeWiki syntax and carries the active rule in the
   header (`B36/S23`, `B2/S34H`, `WireWorld`, …). Imported documents are bounded:
   a single run may not exceed 1,000,000 cells and a document is capped at
@@ -258,50 +261,64 @@ Tessera Grid is the renamed LifeGrid project:
 - The command-line binary is now `tessera` (crate `tessera-grid`).
 - On first launch, `~/.config/lifegrid/lifegrid_config.json` is imported into
   `~/.config/tessera-grid/config.json`; the old file is left untouched.
-- Saved `.lifegrid` grids can still be opened; new saves use `.tessera`.
+- Valid legacy `.lifegrid` grids can still be opened with default evolution
+  settings; new saves use `.tessera`.
 - `LIFEGRID_CONFIG_DIR` continues to work alongside `TESSERA_CONFIG_DIR`.
 
 ---
 
 ## Computation and Analysis
 
-Four of the built-in systems can compute anything a Turing machine can:
+Four built-in rules support universal computation in their idealized settings,
+with suitable encodings and enough space. Finite grids are bounded
+approximations, not demonstrations of arbitrary computation:
 
 | System | Why it is universal | How to explore it |
 |--------|--------------------|-------------------|
 | Elementary 1D, rule 110 | Cook (2004) proved rule 110 simulates a universal Turing machine | `--rule W110`, or pick Elementary 1D and set rule 110 |
 | Conway's Game of Life | Logic gates, counters and a universal machine have been built from gliders | Draw gates or import RLE from LifeWiki |
 | Wireworld | Designed as an electronic-logic CA; gate libraries exist | The four states map directly onto wires, heads and tails |
-| Langton's Ant | Proven universal: it can simulate any Turing machine | Let it run past ~10,000 steps to watch the emergent highway |
+| Langton's Ant | Supports universal computation with suitable encoded configurations | Explore trajectories; the familiar empty-plane highway is not a universal-machine encoding |
 
-Rule 110 is the most compact demonstration: one binary row, three neighbours, a
-single 8-bit rule number. `tessera --rule W110 --width 160 --height 80 --steps 79
---analyze` seeds one cell and prints the resulting space-time diagram's entropy.
+Rule 110 is a compact rule to explore: one binary row, three neighbours and an
+8-bit rule number. [Cook's proof](https://www.complex-systems.com/abstracts/v15_i01_a01/)
+establishes universality; a single-cell cone does not reproduce that encoding.
+`tessera --rule W110 --width 160 --height 80 --steps 79 --analyze` prints
+measurements of the newest row, while the GUI draws the space-time history.
 
 ### Measuring what you see
 
-`--analyze` and the **Statistics** card report:
+`--analyze` and the **Statistics** card measure active cells. In Elementary mode
+this means the newest row, excluding diagram history; its bounds use y = 0.
 
-- **Entropy** (`bits/cell`) — Shannon entropy of the state distribution. It rises
-  as a pattern fills the grid and saturates as the system randomises.
-- **Bounds** — the bounding box of live cells, so growth rates are measurable.
-- **Cycle** — cellular automata are finite and deterministic, so every run must
-  eventually repeat. The period and the transient length are reported as soon as
-  a state recurs (a blinker is period 2; a still life is period 1).
-- **Divergence** — `--divergence N` runs two copies that differ by one cell and
-  prints the Hamming distance per generation, ending with a growth rate. A
-  positive rate is the signature of chaos; a rate near zero means the rule is
-  stable under perturbation.
+- **Entropy** (`bits/cell`) — Shannon state-frequency entropy. A balanced
+  checkerboard and balanced random binary grid both score one bit: this is not
+  spatial complexity or a chaos classifier. A completely full binary grid scores
+  zero, just like an empty one.
+- **Bounds** — the bounding box of nonzero active cells.
+- **Cycle** — exact equality of evolution states, including ant position and
+  heading, is checked after hash matches. Generation zero is observed. Retention
+  is bounded to 250,000 entries and 32 MiB of state payloads, plus entry overhead;
+  "not observed" does not mean aperiodic. Finite deterministic systems eventually
+  repeat, but that repeat may lie outside the retained window or run duration.
+  The first retained occurrence is an upper bound on the transient when earlier
+  states were discarded, not a claim about an unobserved part of the run.
+- **Damage spreading** — `--divergence N` copies the configured initial state
+  before `--steps`, changes one active cell, and prints every elapsed step
+  including zero: distance, normalized damage fraction and source metadata.
+  `ln(final distance) / N` is a descriptive finite-time log separation, not a
+  rigorous Lyapunov exponent or proof of chaos. Extinction makes it undefined;
+  one dying perturbation does not establish stability of the rule.
 
 ```bash
 # Time series a scientist can plot
 tessera --rule W110 --width 200 --height 100 --steps 99 \
     --analysis-csv rule110.csv --analyze
 
-# Sensitivity to initial conditions (chaotic rules grow, stable rules decay)
+# Damage spreading for one initial state and one perturbation
 tessera --pattern "Random Soup" --steps 0 --divergence 100 --seed 7
 
-# All 256 elementary rules side by side: classes 1-4 in one table
+# All 256 elementary rules: measured outcomes, not inferred Wolfram classes
 tessera --sweep-elementary --width 128 --height 96 --steps 95 \
     --analysis-csv elementary-sweep.csv
 ```
@@ -311,15 +328,38 @@ tessera --sweep-elementary --width 128 --height 96 --steps 95 \
 tessera --replicates 20 --steps 200 --seed 1 --analysis-csv replicates.csv
 ```
 
-The sweep is the fastest way to see Wolfram's classification: rule 0 settles to a
-period-1 fixed point, rule 90 collapses to a fixed point after drawing a
-Sierpiński triangle, rule 30 keeps entropy near 1 bit/cell, and rule 110 keeps
-producing structure without ever repeating.
+The sweep uses a single-cell seed and reports fixed points, detected periods or
+no observed repeat. Outcomes depend on width, boundary and observation duration.
+Rules 30, 90 and 110 are useful comparisons, but state-frequency entropy alone
+cannot assign a Wolfram class. All finite-grid runs eventually repeat.
 
 Single runs are anecdotes. `--replicates N` runs the same configuration over `N`
 seeds and reports the mean and standard deviation of population and entropy, plus
-how many runs settled into a cycle and with which periods — the number you need
-before claiming that one rule is denser than another.
+how many cycles were observed and with which periods. The reported standard
+deviation divides by N; it is a description of these runs, not a confidence
+interval or significance test. Replicates run one at a time to bound memory.
+
+Time series, sweeps and replicates share a CSV schema: measurements, cycle
+status, mode, rule, boundary, dimensions, initialization, seed, application
+version and `metric_scope=active_cells`. Unknown periods are blank, not zero.
+Time-series files contain N+1 samples for N steps. Random soups always report
+their seed, including automatically generated seeds. Damage CSV uses a separate
+shared GUI/CLI schema with the initial generation, snapshot hash, perturbation
+coordinates and evolution settings; save the source state to replay GUI experiments.
+
+Sweeps and replicates require positive `--steps`; divergence requires a positive
+count. Incompatible flags are rejected instead of ignored: sweeps accept only
+geometry, boundary, steps and CSV output; replicates additionally accept mode,
+rule, seed and randomize, but not a pattern, divergence or media exports.
+Langton's Ant has no randomized initializer, so randomization/replicates are
+rejected for that mode. Invalid dimensions and export settings are errors rather
+than silently clamped. Closed stdout pipes are harmless; other output failures
+produce a nonzero exit status.
+
+The GUI's damage experiment operates on independent copies, so editing or
+playing the working simulation cannot contaminate its results. Stop or close the
+Analysis window to cancel; partial observations remain available. Sweeps also
+advance in short slices and can be stopped without blocking on all 256 rules.
 
 ### Wireworld devices
 
@@ -331,12 +371,11 @@ Two patterns are verified by simulation tests:
   diagonally next to the head and spawn a second signal, which is why the ring is
   a diamond.
 - **Junction** — one stem wire meeting two diagonal branches. A pulse on the stem
-  splits into both branches; a pulse on either branch reaches the stem.
+  splits into both branches; a pulse on either branch reaches the stem. It needs
+  at least 12×7 cells; smaller grids leave the pattern empty.
 
-Junctions are bidirectional, as all passive Wireworld wiring is. One-way devices
-(diodes, and therefore AND gates) need a larger engineered circuit with tuned
-branch delays; the clock and the junction are the primitives those circuits are
-built from, and this project will not ship a gate it cannot verify.
+This junction is bidirectional. The requested diode/AND/OR library is not yet
+implemented; future circuits need verified truth tables and pulse-timing tests.
 
 ---
 

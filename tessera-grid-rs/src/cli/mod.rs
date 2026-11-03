@@ -8,11 +8,10 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use crate::automata::{LifeLike, ALL_MODES};
-use crate::core::analysis::hamming_distance;
 use crate::core::BoundaryMode;
 use crate::export;
 use crate::rle;
-use crate::sim::{RuleSpec, Simulation, MAX_GRID_SIDE, MIN_GRID_SIDE};
+use crate::sim::{DamageExperiment, RuleSpec, Simulation, MAX_GRID_SIDE, MIN_GRID_SIDE};
 
 const DEFAULT_MODE: &str = "Conway's Game of Life";
 
@@ -26,16 +25,19 @@ mod run;
 /// quietly. Every line the CLI prints goes through here.
 macro_rules! emitln {
     ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let _ = writeln!(std::io::stdout().lock(), $($arg)*);
+        $crate::cli::write_stdout(&format!("{}\n", format_args!($($arg)*)))?;
     }};
 }
 pub(crate) use emitln;
 
 /// Write a block of pre-formatted text, ignoring a closed pipe.
-pub(crate) fn write_stdout(text: &str) {
+pub(crate) fn write_stdout(text: &str) -> Result<(), String> {
     use std::io::Write as _;
-    let _ = std::io::stdout().lock().write_all(text.as_bytes());
+    match std::io::stdout().lock().write_all(text.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(err) => Err(format!("cannot write stdout: {err}")),
+    }
 }
 
 /// Parse a Wolfram code such as `W110` (or just `110`).
