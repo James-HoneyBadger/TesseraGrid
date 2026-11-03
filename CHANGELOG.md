@@ -28,6 +28,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   / `display_grid` for drawing and image export.
 - `Automaton::active_rows`, so space-time automata can declare which rows are live
   state rather than finished history.
+- **Elementary rule sweep**: `--sweep-elementary` runs all 256 Wolfram rules in
+  parallel and prints one metrics row per rule (population, density, entropy,
+  bounds, cycle period), optionally into `--analysis-csv`.
+- **Wireworld `Clock` pattern**: a diamond conductor ring with one electron
+  circulating forever, verified step by step in tests as a sequential-logic
+  building block.
+- CLI output ignores a closed pipe, so `tessera --analyze | head` no longer
+  aborts with "failed printing to stdout".
+
+### Fixed
+- **Immigration newborns took the wrong colour.** The rule averaged the three
+  parents and shifted the result cyclically, so a cell born between two colour-1
+  parents and one colour-2 parent became colour 2. Newborns now inherit the
+  actual majority colour; three-way ties resolve to colour 1. Four tests cover
+  every multiset of three parents.
+- The mode descriptions for Immigration and Rainbow now state the rules the code
+  actually implements.
+- Cycle detection restarts whenever the grid, the boundary or the history
+  changes, so a period found earlier is never reported for an edited grid.
 
 ### Changed
 - **Stepping is faster.** The per-generation age/population pass is now parallel,

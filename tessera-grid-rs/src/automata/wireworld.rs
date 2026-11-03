@@ -21,6 +21,34 @@ impl Wireworld {
     }
 }
 
+impl Wireworld {
+    /// A conductor ring with one electron travelling around it.
+    ///
+    /// The ring is a Manhattan diamond, so every wire cell touches exactly two
+    /// other wire cells: a square corner would put a wire cell diagonally next
+    /// to the head, which spawns a second signal and shortens the clock.
+    fn load_clock(&mut self) {
+        let (w, h) = (self.grid.width, self.grid.height);
+        let radius = (w.min(h) / 2).saturating_sub(1).min(6);
+        if radius == 0 {
+            return;
+        }
+        let (cx, cy) = (w / 2, h / 2);
+        for y in 0..h {
+            for x in 0..w {
+                let dx = (x as i32 - cx as i32).unsigned_abs() as usize;
+                let dy = (y as i32 - cy as i32).unsigned_abs() as usize;
+                if dx + dy == radius {
+                    self.grid.set(y, x, 3); // conductor
+                }
+            }
+        }
+        // Head at the top vertex, tail just clockwise of it.
+        self.grid.set(cy - radius, cx, 1);
+        self.grid.set(cy - radius + 1, cx + 1, 2);
+    }
+}
+
 impl Automaton for Wireworld {
     fn name(&self) -> &'static str {
         "Wireworld"
@@ -63,8 +91,13 @@ impl Automaton for Wireworld {
 
     fn load_pattern(&mut self, pattern: &str) {
         self.grid.clear();
-        if pattern == "Empty" {
-            return;
+        match pattern {
+            "Empty" => return,
+            "Clock" => {
+                self.load_clock();
+                return;
+            }
+            _ => {}
         }
         let mut rng = rand::rng();
         for cell in self.grid.cells.iter_mut() {
@@ -80,7 +113,7 @@ impl Automaton for Wireworld {
     }
 
     fn available_patterns(&self) -> &'static [&'static str] {
-        &["Random Soup", "Empty"]
+        &["Clock", "Random Soup", "Empty"]
     }
 
     fn boundary(&self) -> BoundaryMode {
@@ -113,5 +146,51 @@ impl Automaton for Wireworld {
             })
             .collect();
         self.grid.cells = cells;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_count(wire: &Wireworld, state: u8) -> usize {
+        wire.grid
+            .cells
+            .iter()
+            .filter(|&&cell| cell == state)
+            .count()
+    }
+
+    #[test]
+    fn the_clock_ring_keeps_one_signal_circulating() {
+        let mut wire = Wireworld::new(17, 17);
+        wire.load_pattern("Clock");
+        let initial = wire.grid.cells.clone();
+        let radius = 6;
+        let ring_length = 4 * radius;
+
+        assert_eq!(state_count(&wire, 1), 1, "one head to start");
+        assert_eq!(state_count(&wire, 2), 1, "one tail to start");
+
+        for step in 1..=ring_length {
+            wire.step();
+            assert_eq!(state_count(&wire, 1), 1, "one head after step {step}");
+            assert_eq!(state_count(&wire, 2), 1, "one tail after step {step}");
+        }
+        assert_eq!(
+            wire.grid.cells, initial,
+            "the ring returns to its starting state"
+        );
+    }
+
+    #[test]
+    fn the_clock_needs_room_and_degrades_safely() {
+        let mut tiny = Wireworld::new(2, 2);
+        tiny.load_pattern("Clock");
+        assert_eq!(
+            tiny.grid.population(),
+            0,
+            "no ring fits, so nothing is drawn"
+        );
     }
 }

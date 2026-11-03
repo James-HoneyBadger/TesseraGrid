@@ -499,12 +499,15 @@ impl Simulation {
         }
         self.population -= u64::from(before != 0);
         self.population += u64::from(after != 0);
+        // The observed generation sequence no longer applies.
+        self.cycles.reset();
         self.bump();
     }
 
     pub fn edit_cells(&mut self, mut edit: impl FnMut(&mut [u8])) {
         self.automaton.edit_cells(&mut edit);
         self.recount_population();
+        self.cycles.reset();
         self.bump();
     }
 
@@ -515,6 +518,7 @@ impl Simulation {
             self.age_grid = vec![0; cells.len()];
         }
         self.recount_population();
+        self.cycles.reset();
         self.bump();
     }
 
@@ -547,6 +551,8 @@ impl Simulation {
 
     pub fn set_boundary(&mut self, boundary: BoundaryMode) {
         self.automaton.set_boundary(boundary);
+        // Different edges mean a different sequence of states.
+        self.cycles.reset();
     }
 
     /// Apply new B/S rules to the active automaton without touching the grid.
@@ -668,6 +674,8 @@ impl Simulation {
         self.generation = snapshot.generation;
         self.age_grid = vec![0; snapshot.cells.len()];
         self.pop_history.clear();
+        // The timeline forked or jumped: earlier observations are history.
+        self.cycles.reset();
         self.recount_population();
         self.bump();
     }

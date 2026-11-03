@@ -99,6 +99,10 @@ pub struct Cli {
     #[arg(long, value_name = "N")]
     pub divergence: Option<u64>,
 
+    /// Run all 256 elementary rules and print one metrics row per rule.
+    #[arg(long)]
+    pub sweep_elementary: bool,
+
     /// List the available automaton modes and exit.
     #[arg(long)]
     pub list_modes: bool,
@@ -130,6 +134,7 @@ impl Cli {
             || self.analyze
             || self.analysis_csv.is_some()
             || self.divergence.is_some()
+            || self.sweep_elementary
     }
 
     /// Generations to simulate, applying the documented default.

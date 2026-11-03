@@ -87,6 +87,9 @@ impl TesseraGridApp {
                                     let description = match name {
                                         "Random Soup" => "Random 15% soup",
                                         "Empty" => "Clears the grid",
+                                        "Clock" => "An electron circulating a conductor ring",
+                                        "Single Cell" => "One cell: the classic space-time cone",
+                                        "Random Row" => "Random 50% first row",
                                         _ => {
                                             patterns::conway_pattern_description(name).unwrap_or("")
                                         }

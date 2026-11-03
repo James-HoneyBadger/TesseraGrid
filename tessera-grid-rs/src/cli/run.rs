@@ -5,9 +5,12 @@ use super::*;
 pub fn run(cli: &Cli) -> Result<(), String> {
     if cli.list_modes {
         for mode in ALL_MODES {
-            println!("{mode}");
+            emitln!("{mode}");
         }
         return Ok(());
+    }
+    if cli.sweep_elementary {
+        return run_elementary_sweep(cli);
     }
 
     // A Wolfram code selects the Elementary 1D mode, B/S notation selects Custom.
@@ -117,15 +120,15 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         print_analysis(&sim, steps);
     }
 
-    println!("mode: {}", sim.mode());
-    println!("rule: {}", sim.rule_string());
-    println!("grid: {}x{}", sim.width(), sim.height());
-    println!("pattern: {pattern}");
-    println!("generation: {}", sim.generation);
-    println!("population: {}", sim.population());
-    println!("density: {:.2}%", sim.density() * 100.0);
+    emitln!("mode: {}", sim.mode());
+    emitln!("rule: {}", sim.rule_string());
+    emitln!("grid: {}x{}", sim.width(), sim.height());
+    emitln!("pattern: {pattern}");
+    emitln!("generation: {}", sim.generation);
+    emitln!("population: {}", sim.population());
+    emitln!("density: {:.2}%", sim.density() * 100.0);
     if recording {
-        println!("frames: {}", sim.frame_count());
+        emitln!("frames: {}", sim.frame_count());
     }
 
     if let Some(generations) = cli.divergence {
@@ -140,6 +143,66 @@ pub fn run(cli: &Cli) -> Result<(), String> {
         )?;
     }
 
+    Ok(())
+}
+
+/// Run every elementary rule and report one row of metrics per rule.
+///
+/// This is the cheapest way to see Wolfram's four classes side by side: stable
+/// rules settle into a short cycle, chaotic rules keep high entropy and no cycle.
+fn run_elementary_sweep(cli: &Cli) -> Result<(), String> {
+    use rayon::prelude::*;
+
+    let boundary = cli.boundary_mode()?;
+    let width = cli.grid_width().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+    let height = cli.grid_height().clamp(MIN_GRID_SIDE, MAX_GRID_SIDE);
+    let steps = cli.steps().max(1);
+
+    let rows: Vec<String> = (0..=255u8)
+        .into_par_iter()
+        .map(|rule| {
+            let mut sim = Simulation::new(
+                "Elementary 1D",
+                width,
+                height,
+                RuleSpec::new(boundary, &[3], &[2, 3]).with_elementary(rule),
+                "Single Cell",
+            );
+            sim.record_timeline = false;
+            sim.detect_cycles = true;
+            sim.run_steps(steps, || false);
+
+            let metrics = sim.metrics();
+            let (bounds_width, bounds_height) = metrics
+                .bbox
+                .map_or((0, 0), |(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1));
+            format!(
+                "{rule},{},{:.6},{:.6},{bounds_width},{bounds_height},{}\n",
+                metrics.population,
+                metrics.density,
+                metrics.entropy,
+                metrics.cycle.map_or(0, |cycle| cycle.period)
+            )
+        })
+        .collect();
+
+    let mut table =
+        String::from("rule,population,density,entropy,bounds_width,bounds_height,cycle_period\n");
+    for row in rows {
+        table.push_str(&row);
+    }
+
+    match &cli.analysis_csv {
+        Some(path) => {
+            std::fs::write(path, &table)
+                .map_err(|err| format!("cannot write {}: {err}", path.display()))?;
+            emitln!(
+                "swept 256 elementary rules ({steps} generations) into {}",
+                path.display()
+            );
+        }
+        None => write_stdout(&table),
+    }
     Ok(())
 }
 
@@ -164,23 +227,24 @@ fn write_analysis_csv(
 
 fn print_analysis(sim: &Simulation, steps: u64) {
     let metrics = sim.metrics();
-    println!("entropy: {:.4} bits/cell", metrics.entropy);
+    emitln!("entropy: {:.4} bits/cell", metrics.entropy);
     match metrics.bbox {
         Some((x0, y0, x1, y1)) => {
-            println!("bounds: {}x{} at ({x0}, {y0})", x1 - x0 + 1, y1 - y0 + 1)
+            emitln!("bounds: {}x{} at ({x0}, {y0})", x1 - x0 + 1, y1 - y0 + 1)
         }
-        None => println!("bounds: empty"),
+        None => emitln!("bounds: empty"),
     }
     match metrics.cycle {
-        Some(cycle) => println!(
+        Some(cycle) => emitln!(
             "cycle: period {} after {} generations",
-            cycle.period, cycle.transient
+            cycle.period,
+            cycle.transient
         ),
-        None => println!("cycle: none within {steps} generations"),
+        None => emitln!("cycle: none within {steps} generations"),
     }
     if let Some(cycle) = metrics.cycle {
         if cycle.period == 1 {
-            println!("note: the state is a still life (fixed point)");
+            emitln!("note: the state is a still life (fixed point)");
         }
     }
 }
@@ -220,22 +284,22 @@ fn run_divergence(
     let current = perturbed.grid().get(target.0, target.1);
     perturbed.paint(target.0, target.1, if current == 0 { 1 } else { 0 });
 
-    println!("# divergence: one perturbed cell, seed {seed}");
-    println!("# generation,hamming_distance");
+    emitln!("# divergence: one perturbed cell, seed {seed}");
+    emitln!("# generation,hamming_distance");
     let mut distance = 0;
     for generation in 1..=steps.max(1) {
         control.step();
         perturbed.step();
         distance = hamming_distance(&control.grid().cells, &perturbed.grid().cells);
         if generation <= 10 || generation % 10 == 0 || generation == steps {
-            println!("{generation},{distance}");
+            emitln!("{generation},{distance}");
         }
     }
     if distance > 0 {
         let rate = (distance as f64).ln() / steps.max(1) as f64;
-        println!("# growth rate: {rate:.4} per generation (ln distance / steps)");
+        emitln!("# growth rate: {rate:.4} per generation (ln distance / steps)");
     } else {
-        println!("# growth rate: 0 (the perturbation died out)");
+        emitln!("# growth rate: 0 (the perturbation died out)");
     }
     Ok(())
 }

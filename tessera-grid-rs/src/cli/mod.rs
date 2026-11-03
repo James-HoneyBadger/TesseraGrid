@@ -19,6 +19,25 @@ const DEFAULT_MODE: &str = "Conway's Game of Life";
 mod args;
 mod run;
 
+/// `println!` that ignores a closed pipe.
+///
+/// `println!` panics when the reader has gone away, so `tessera --analyze |
+/// head` used to abort with "failed printing to stdout" instead of stopping
+/// quietly. Every line the CLI prints goes through here.
+macro_rules! emitln {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout().lock(), $($arg)*);
+    }};
+}
+pub(crate) use emitln;
+
+/// Write a block of pre-formatted text, ignoring a closed pipe.
+pub(crate) fn write_stdout(text: &str) {
+    use std::io::Write as _;
+    let _ = std::io::stdout().lock().write_all(text.as_bytes());
+}
+
 /// Parse a Wolfram code such as `W110` (or just `110`).
 ///
 /// Returns `Ok(None)` when the text is not a Wolfram code, so callers can fall

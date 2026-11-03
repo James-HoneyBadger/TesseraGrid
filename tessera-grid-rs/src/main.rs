@@ -14,7 +14,8 @@ fn main() -> eframe::Result<()> {
         match cli::run(&args) {
             Ok(()) => return Ok(()),
             Err(err) => {
-                eprintln!("tessera: {err}");
+                use std::io::Write as _;
+                let _ = writeln!(std::io::stderr(), "tessera: {err}");
                 std::process::exit(1);
             }
         }

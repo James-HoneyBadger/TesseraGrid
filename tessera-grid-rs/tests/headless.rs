@@ -154,6 +154,53 @@ fn divergence_reports_a_growth_rate() {
     assert!(stdout.contains("# growth rate:"), "{stdout}");
 }
 
+#[test]
+fn the_elementary_sweep_covers_every_rule() {
+    let dir = temp_dir("sweep");
+    let csv = dir.join("sweep.csv");
+
+    let output = bin()
+        .args(["--sweep-elementary", "--width", "64", "--height", "48"])
+        .args(["--steps", "40", "--analysis-csv"])
+        .arg(&csv)
+        .output()
+        .expect("run tessera");
+    assert!(output.status.success());
+
+    let text = std::fs::read_to_string(&csv).expect("read sweep");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 257, "header plus 256 rules");
+    assert!(lines[0].starts_with("rule,"), "{}", lines[0]);
+    assert!(lines[1].starts_with("0,"), "rule 0 comes first");
+    assert!(lines[256].starts_with("255,"), "rule 255 comes last");
+
+    // Rule 0 clears the grid and is a fixed point from the first generation.
+    let rule_zero: Vec<&str> = lines[1].split(',').collect();
+    assert_eq!(rule_zero[6], "1", "rule 0 reaches a period-1 cycle");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn a_closed_stdout_does_not_panic() {
+    use std::process::Stdio;
+
+    let mut child = bin()
+        .args(["--sweep-elementary", "--width", "96", "--height", "72"])
+        .args(["--steps", "60"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn tessera");
+    // Close the read end so the child's writes fail with EPIPE.
+    drop(child.stdout.take());
+    let output = child.wait_with_output().expect("wait for tessera");
+    assert!(
+        output.status.success(),
+        "a closed pipe must not abort the CLI: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn size(path: &Path) -> u64 {
     std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
 }

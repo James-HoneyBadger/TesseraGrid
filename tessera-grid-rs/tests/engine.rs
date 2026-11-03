@@ -371,3 +371,29 @@ fn cycle_detection_stays_off_until_enabled() {
     sim.run_steps(6, || false);
     assert_eq!(sim.cycle(), None);
 }
+
+#[test]
+fn editing_the_grid_invalidates_the_detected_cycle() {
+    let mut sim = conway(20, 20);
+    sim.load_pattern("Blinker");
+    sim.detect_cycles = true;
+    sim.run_steps(6, || false);
+    assert!(sim.cycle().is_some(), "a blinker settles into a cycle");
+
+    sim.paint(0, 0, 1);
+    assert_eq!(sim.cycle(), None, "painting starts a new observation");
+    assert_eq!(sim.metrics().cycle, None);
+}
+
+#[test]
+fn undoing_invalidates_the_detected_cycle() {
+    let mut sim = conway(20, 20);
+    sim.load_pattern("Blinker");
+    sim.detect_cycles = true;
+    sim.push_undo();
+    sim.run_steps(8, || false);
+    assert!(sim.cycle().is_some());
+
+    assert!(sim.undo());
+    assert_eq!(sim.cycle(), None, "a jump in history resets detection");
+}

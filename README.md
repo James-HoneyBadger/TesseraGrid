@@ -46,8 +46,9 @@ rename, themes, timeline and pattern editor.
 - **Live statistics** — population chart with axes, peak/min/average, entropy,
   bounding box, cycle period, and CSV export.
 - **Universal computation** — Rule 110 (Turing complete), plus the Game of Life,
-  Wireworld and Langton's Ant, with the tooling to study them: seeded runs,
-  cycle detection and sensitivity-to-perturbation experiments.
+  Wireworld (with a circulating-signal clock) and Langton's Ant, with the tooling
+  to study them: seeded runs, cycle detection, parameter sweeps and
+  sensitivity-to-perturbation experiments.
 - **Session state** — save/load `.tessera` JSON files (legacy `.lifegrid` files still load); UI settings persist.
 - **Multi-threaded stepping** — neighbour counting and cell updates run on all
   cores via Rayon.
@@ -145,6 +146,7 @@ straightforward. With no arguments the window opens.
 | `--analyze` | Print entropy, bounds, bounding box and cycle information |
 | `--analysis-csv <PATH>` | Write per-generation metrics as CSV |
 | `--divergence <N>` | Measure how quickly two runs differing by one cell separate |
+| `--sweep-elementary` | Run all 256 elementary rules and print one metrics row each |
 | `--list-modes` | List modes and exit |
 
 Examples:
@@ -294,7 +296,25 @@ tessera --rule W110 --width 200 --height 100 --steps 99 \
 
 # Sensitivity to initial conditions (chaotic rules grow, stable rules decay)
 tessera --pattern "Random Soup" --steps 0 --divergence 100 --seed 7
+
+# All 256 elementary rules side by side: classes 1-4 in one table
+tessera --sweep-elementary --width 128 --height 96 --steps 95 \
+    --analysis-csv elementary-sweep.csv
 ```
+
+The sweep is the fastest way to see Wolfram's classification: rule 0 settles to a
+period-1 fixed point, rule 90 collapses to a fixed point after drawing a
+Sierpiński triangle, rule 30 keeps entropy near 1 bit/cell, and rule 110 keeps
+producing structure without ever repeating.
+
+### Wireworld clock
+
+The **Clock** pattern is a diamond ring of conductors with one electron: exactly
+one head and one tail circulate forever, one cell per generation, and the ring
+returns to its starting state after `4 × radius` steps. It is a verified
+building block for sequential logic — square corners would put a conductor
+diagonally next to the head and spawn a second signal, which is why the ring is
+diamond-shaped.
 
 ---
 
@@ -306,8 +326,8 @@ tessera --pattern "Random Soup" --steps 0 --divergence 100 --seed 7
 | High Life | `B36/S23` | wrap / fixed / reflect |
 | Hexagonal Life | `B2/S34H` (odd-r hex) | ignored (always wraps) |
 | Elementary 1D | `W0`–`W255` (Wolfram code) | wrap / fixed / reflect |
-| Immigration Game | two-colour `B3/S23` | wrap / fixed / reflect |
-| Rainbow Game | six-colour cyclic Life | wrap / fixed / reflect |
+| Immigration Game | three-colour Life; newborns take the majority colour | wrap / fixed / reflect |
+| Rainbow Game | six-colour Life; newborns blend the average colour | wrap / fixed / reflect |
 | Langton's Ant | `LangtonsAnt` | ignored (always wraps) |
 | Wireworld | `WireWorld` | wrap / fixed / reflect |
 | Brian's Brain | `Brian'sBrain` | wrap / fixed / reflect |

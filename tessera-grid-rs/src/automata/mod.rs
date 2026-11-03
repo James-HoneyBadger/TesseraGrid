@@ -250,8 +250,8 @@ impl Mode {
             Mode::Elementary1D => {
                 "Wolfram's 256 one-dimensional rules, drawn as a space-time diagram. Rule 110 is Turing complete."
             }
-            Mode::Immigration => "Two-colour Life; newborns inherit the majority colour.",
-            Mode::Rainbow => "Six-colour cyclic variant of Life.",
+            Mode::Immigration => "Three-colour Life; newborns inherit the majority colour of their parents.",
+            Mode::Rainbow => "Six-colour Life; newborns blend the average colour of their parents.",
             Mode::Ant => "A single ant turns, flips cells, and walks the grid.",
             Mode::Wireworld => "Four states: empty, head, tail, and conductor.",
             Mode::BriansBrain => "Three states: off, firing, and refractory.",
