@@ -57,6 +57,9 @@ pub struct AppConfig {
     /// Wolfram code for the Elementary 1D mode.
     #[serde(default = "default_elementary_rule")]
     pub elementary_rule: u8,
+    /// Seed used by the GUI's Randomize button, so a run can be reproduced.
+    #[serde(default = "default_seed")]
+    pub seed: u64,
 }
 
 fn default_config_version() -> u32 {
@@ -86,6 +89,9 @@ fn default_iso_height() -> f32 {
 fn default_elementary_rule() -> u8 {
     crate::automata::elementary::DEFAULT_RULE
 }
+fn default_seed() -> u64 {
+    1
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -113,6 +119,7 @@ impl Default for AppConfig {
             brush_size: 1,
             iso_height: 1.0,
             elementary_rule: default_elementary_rule(),
+            seed: default_seed(),
         }
     }
 }
@@ -262,6 +269,24 @@ mod tests {
         assert_eq!(cfg.view_mode, "Flat");
         assert!(cfg.dark_mode);
         assert!(cfg.theme.is_empty(), "old configs omit the theme");
+    }
+
+    #[test]
+    fn the_random_seed_round_trips() {
+        let cfg = AppConfig {
+            seed: 987_654_321,
+            ..AppConfig::default()
+        };
+        let text = serde_json::to_string(&cfg).expect("serialise");
+        let loaded: AppConfig = serde_json::from_str(&text).expect("deserialise");
+        assert_eq!(loaded.seed, 987_654_321);
+
+        // Older configs have no seed and fall back to the documented default.
+        let old: AppConfig = serde_json::from_str(
+            r#"{"grid_width":10,"grid_height":10,"cell_size":4.0,"speed":5,"show_grid":true,"automaton_mode":"High Life","pattern":"Random Soup","boundary":"Wrap","custom_birth":[3],"custom_survival":[2,3]}"#,
+        )
+        .expect("deserialise");
+        assert_eq!(old.seed, 1);
     }
 
     #[test]

@@ -47,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   actually implements.
 - Cycle detection restarts whenever the grid, the boundary or the history
   changes, so a period found earlier is never reported for an edited grid.
+- The GUI's random seed is saved with the rest of the configuration, so a
+  randomize run can be reproduced after a restart.
 
 ### Changed
 - **Stepping is faster.** The per-generation age/population pass is now parallel,

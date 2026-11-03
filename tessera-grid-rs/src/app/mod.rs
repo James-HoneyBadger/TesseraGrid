@@ -216,8 +216,8 @@ impl TesseraGridApp {
             custom_birth: cfg.custom_birth,
             custom_survival: cfg.custom_survival,
             elementary_rule: cfg.elementary_rule,
-            seed_input: "1".into(),
-            last_seed: 1,
+            seed_input: cfg.seed.to_string(),
+            last_seed: cfg.seed,
 
             viewport_offset: Vec2::ZERO,
             paint_state: cfg.paint_state.max(1),
